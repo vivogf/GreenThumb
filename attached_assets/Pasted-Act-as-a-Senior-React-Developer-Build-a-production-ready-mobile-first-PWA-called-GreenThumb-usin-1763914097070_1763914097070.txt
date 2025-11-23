@@ -1,0 +1,59 @@
+Act as a Senior React Developer. Build a production-ready, mobile-first PWA called "GreenThumb" using React, Vite, Material UI (MUI), and Supabase.
+
+### 1. Visual Identity & Design System
+- **Theme**: "Zen Minimalist".
+- **Palette**:
+  - Primary: `#2E7D32` (Forest Green).
+  - Secondary: `#81C784` (Light Green).
+  - Background: `#F5F5F5` (Light Grey) with White cards.
+  - Alerts: Soft Red for overdue plants.
+- **Typography**: Roboto (standard MUI).
+- **Layout**: Mobile-first. Use a Bottom Navigation Bar for mobile (Dashboard, Add Plant, Profile) or a responsive App Bar for desktop.
+- **UX**: Heavy focus on plant images. Use "Skeleton" loaders while data fetches.
+
+### 2. Tech Stack & Architecture
+- **Frontend**: React + Vite.
+- **UI Library**: Material UI (MUI) v5.
+- **Backend/DB**: Supabase (Auth + Database).
+- **Date Handling**: Use `date-fns` for all date calculations.
+- **State Management**: React Context or simple Hooks.
+- **Environment**: Access Supabase keys via `import.meta.env.VITE_SUPABASE_URL` and `import.meta.env.VITE_SUPABASE_ANON_KEY`.
+
+### 3. Database Schema (I will run this SQL, build the frontend to match it)
+Assume the following Supabase structure:
+- **Table `plants`**:
+  - `id` (uuid, primary key)
+  - `user_id` (uuid, references auth.users, not null)
+  - `name` (text)
+  - `location` (text, e.g., "Bedroom")
+  - `photo_url` (text, URL string)
+  - `water_frequency_days` (int)
+  - `last_watered_date` (timestamptz)
+  - `notes` (text)
+
+### 4. Core Features & Logic
+
+#### A. Authentication (Strict Data Isolation)
+- Implement a proper Auth flow using Supabase Auth.
+- Create a `ProtectedRoute` wrapper. If a user is not logged in, redirect to a Login screen.
+- **Critical**: The app must rely on Supabase Row Level Security (RLS). Ensure all DB queries simply select from 'plants' without manual filtering, relying on the backend to return only the user's data.
+
+#### B. Dashboard (The "Smart" View)
+- Fetch plants and sort them into two groups:
+  1. **Need Water** (Overdue or Due Today).
+  2. **All Good** (Future date).
+- **Card Design**: Show large photo, name, location, and a prominent "WATER" button.
+- **Logic**: When "WATER" is clicked:
+  1. Optimistically update the UI (make it turn green immediately).
+  2. Send update to Supabase (`last_watered_date` = now).
+
+#### C. Plant Management
+- **Add Plant**: Simple form (Name, Location, Frequency, Photo URL).
+- **Plant Details**: View history and notes.
+
+### 5. Implementation Steps for Agent
+1. Setup `src/supabaseClient.js` using environment variables.
+2. Create the `AuthProvider` context to handle user sessions.
+3. Build the `PlantCard` component with the "Water" button logic.
+4. Build the `Dashboard` page with the sorting logic.
+5. Provide the **exact SQL snippet** I need to run in Supabase SQL Editor to set up the tables and RLS policies perfectly.

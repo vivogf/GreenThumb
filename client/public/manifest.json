@@ -1,0 +1,21 @@
+{
+  "name": "GreenThumb - Plant Care Tracker",
+  "short_name": "GreenThumb",
+  "description": "Your personal plant care companion. Track watering schedules and keep your plants thriving.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F5F5F5",
+  "theme_color": "#2E7D32",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

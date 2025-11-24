@@ -1,4 +1,4 @@
-# GreenThumb - What's Been Built ✅
+# GreenThumb - What's Been Built
 
 ## Complete Feature Implementation
 

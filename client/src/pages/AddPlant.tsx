@@ -12,12 +12,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
 import { queryClient } from '@/lib/queryClient';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Upload, X } from 'lucide-react';
+import { useState } from 'react';
 
 export default function AddPlant() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { user } = useAuth();
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   const form = useForm<InsertPlant>({
     resolver: zodResolver(insertPlantSchema),
@@ -30,6 +34,46 @@ export default function AddPlant() {
       notes: '',
     },
   });
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        toast({
+          title: 'File too large',
+          description: 'Photo must be less than 5MB',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      setSelectedFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const uploadPhotoToSupabase = async (file: File): Promise<string> => {
+    if (!user) throw new Error('User not authenticated');
+
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('plant-photos')
+      .upload(fileName, file);
+
+    if (uploadError) throw uploadError;
+
+    const { data } = supabase.storage
+      .from('plant-photos')
+      .getPublicUrl(fileName);
+
+    return data.publicUrl;
+  };
 
   const addPlantMutation = useMutation({
     mutationFn: async (plant: InsertPlant) => {
@@ -61,8 +105,25 @@ export default function AddPlant() {
     },
   });
 
-  const onSubmit = (data: InsertPlant) => {
-    addPlantMutation.mutate(data);
+  const onSubmit = async (data: InsertPlant) => {
+    if (selectedFile && !data.photo_url) {
+      setIsUploading(true);
+      try {
+        const photoUrl = await uploadPhotoToSupabase(selectedFile);
+        data.photo_url = photoUrl;
+        addPlantMutation.mutate(data);
+      } catch (error: any) {
+        toast({
+          title: 'Upload failed',
+          description: error.message,
+          variant: 'destructive',
+        });
+      } finally {
+        setIsUploading(false);
+      }
+    } else {
+      addPlantMutation.mutate(data);
+    }
   };
 
   return (
@@ -125,14 +186,47 @@ export default function AddPlant() {
                 name="photo_url"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Photo URL</FormLabel>
+                    <FormLabel>Plant Photo</FormLabel>
                     <FormControl>
-                      <Input
-                        type="url"
-                        placeholder="https://example.com/plant-photo.jpg"
-                        {...field}
-                        data-testid="input-photo-url"
-                      />
+                      <div className="space-y-3">
+                        {preview ? (
+                          <div className="relative w-full bg-muted rounded-lg overflow-hidden">
+                            <img
+                              src={preview}
+                              alt="Plant preview"
+                              className="w-full h-48 object-cover"
+                              data-testid="img-plant-preview"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedFile(null);
+                                setPreview(null);
+                                field.onChange('');
+                              }}
+                              className="absolute top-2 right-2 bg-destructive text-destructive-foreground rounded-full p-1 hover:bg-destructive/90"
+                              data-testid="button-remove-photo"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-muted-foreground rounded-lg cursor-pointer hover:bg-muted transition-colors" data-testid="label-photo-upload">
+                            <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                              <Upload className="w-8 h-8 text-muted-foreground mb-2" />
+                              <p className="text-sm text-muted-foreground">Click to upload photo</p>
+                              <p className="text-xs text-muted-foreground">PNG, JPG up to 5MB</p>
+                            </div>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleFileSelect}
+                              className="hidden"
+                              data-testid="input-photo-file"
+                            />
+                          </label>
+                        )}
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -180,10 +274,10 @@ export default function AddPlant() {
               <Button
                 type="submit"
                 className="w-full"
-                disabled={addPlantMutation.isPending}
+                disabled={addPlantMutation.isPending || isUploading || !selectedFile}
                 data-testid="button-submit-plant"
               >
-                {addPlantMutation.isPending ? 'Adding Plant...' : 'Add Plant'}
+                {isUploading ? 'Uploading Photo...' : addPlantMutation.isPending ? 'Adding Plant...' : 'Add Plant'}
               </Button>
             </form>
           </Form>

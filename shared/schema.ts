@@ -14,7 +14,7 @@ export interface Plant {
 export const insertPlantSchema = z.object({
   name: z.string().min(1, "Plant name is required"),
   location: z.string().min(1, "Location is required"),
-  photo_url: z.string().url("Please enter a valid URL"),
+  photo_url: z.string().min(1, "Photo is required"),
   water_frequency_days: z.number().min(1, "Frequency must be at least 1 day"),
   last_watered_date: z.string(),
   notes: z.string().optional().default(""),

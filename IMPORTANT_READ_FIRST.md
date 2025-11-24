@@ -1,47 +1,56 @@
-# ⚠️ IMPORTANT: Setup Required Before Testing
+# ВАЖНО: Миграция базы данных
 
-## Your app is built, but it won't work yet!
+## Ваша база данных требует обновления!
 
-The GreenThumb app has been fully built and is running on port 5000, but **you must complete the Supabase setup** before it will function.
+У вас уже есть таблица `plants`, но её структура немного отличается от того, что использует приложение. Нужно запустить простую миграцию.
 
-## Quick Setup Checklist (5 minutes)
+## Быстрая миграция (2 минуты)
 
-### ☐ Step 1: Disable Email Confirmation
-1. Open your Supabase Dashboard
-2. Go to **Authentication** → **Providers** → **Email**
-3. Find "Confirm email" and **DISABLE** it
-4. Click **Save**
+### Шаг 1: Отключите email подтверждение
+1. Откройте Supabase Dashboard
+2. Перейдите в **Authentication** → **Providers** → **Email**
+3. Найдите "Confirm email" и **ВЫКЛЮЧИТЕ** его
+4. Нажмите **Save**
 
-### ☐ Step 2: Run the SQL Script
-1. In Supabase Dashboard, go to **SQL Editor**
-2. Click **New Query**
-3. Copy ALL contents from `supabase_setup.sql` (in this project)
-4. Paste and click **Run**
-5. You should see: "GreenThumb database setup complete!"
+### Шаг 2: Запустите миграционный скрипт
+1. В Supabase Dashboard откройте **SQL Editor**
+2. Нажмите **New Query**
+3. Скопируйте **ВСЁ** содержимое файла `migration_to_new_schema.sql`
+4. Вставьте и нажмите **Run**
+5. Вы увидите: "Migration complete!"
 
-### ☐ Step 3: Verify
-- Check that the `plants` table appears in **Database** → **Tables**
-- You should see columns: id, user_id, name, location, photo_url, etc.
+**ВНИМАНИЕ:** Миграция удалит все существующие данные в таблице plants!
 
-## That's it! Now you can test the app:
+### Шаг 3: Проверьте
+- Проверьте что таблица `plants` появилась в **Database** → **Tables**
+- Вы должны увидеть поля: id, user_id, name, location, **photo_url**, **water_frequency_days**, **last_watered_date**, notes
 
-1. Open the app (it's already running on port 5000)
-2. Sign up with any email (e.g., test@example.com)
-3. Start adding plants!
+## Готово! Теперь можно тестировать приложение:
 
----
-
-## What happens if I skip this?
-
-- ❌ Sign up will appear to work but sign in will fail
-- ❌ "Invalid login credentials" error
-- ❌ Can't add plants
-- ❌ Database errors in console
-
-## Need help?
-
-See `SETUP.md` for detailed instructions with screenshots and troubleshooting.
+1. Откройте приложение (оно уже запущено на порту 5000)
+2. Зарегистрируйтесь с любым email (например, test@example.com)
+3. Начинайте добавлять растения!
 
 ---
 
-**✅ Once you complete these 2 steps, the app is fully functional and ready to use!**
+## Что изменилось в миграции?
+
+**Старые поля -> Новые:**
+- `species` -> удалено (не нужно)
+- `watering_frequency` -> `water_frequency_days`
+- `last_watered` -> `last_watered_date`
+- `image_url` -> `photo_url`
+
+## Что будет если пропустить миграцию?
+
+- Приложение не сможет добавлять растения
+- Ошибки при попытке полить растение
+- Неправильное отображение данных
+
+## Нужна помощь?
+
+Смотрите `SETUP.md` для подробных инструкций.
+
+---
+
+**После выполнения 2 шагов приложение полностью готово к работе!**

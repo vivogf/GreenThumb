@@ -1,8 +1,18 @@
 # GreenThumb Setup Guide
 
-## Supabase Setup
+## Для пользователей с существующей таблицей plants
 
-Your GreenThumb app is almost ready! You need to configure authentication and set up the database in Supabase.
+**Если у вас уже есть таблица `plants` с полями `species`, `watering_frequency`, `last_watered`, `image_url`:**
+
+Используйте файл `migration_to_new_schema.sql` для миграции на новую схему.
+
+См. **IMPORTANT_READ_FIRST.md** для быстрых инструкций по миграции.
+
+---
+
+## Настройка Supabase (для новых проектов)
+
+Ваше приложение GreenThumb почти готово! Нужно настроить аутентификацию и базу данных в Supabase.
 
 ### Step 1: Disable Email Confirmation (For Testing)
 
@@ -24,13 +34,18 @@ Now users can sign in immediately after signing up without email confirmation.
 
 ### Step 3: Run the Setup SQL
 
-Copy the entire contents of `supabase_setup.sql` and paste it into the SQL editor, then click **Run**.
+**Выберите правильный скрипт:**
+
+- **Если таблица plants уже существует** (но с другими полями): используйте `migration_to_new_schema.sql`
+- **Если это новый проект** (таблицы plants нет): используйте `supabase_setup.sql`
+
+Скопируйте всё содержимое выбранного SQL файла и вставьте в SQL editor, затем нажмите **Run**.
 
 This will:
-- ✅ Create the `plants` table with all required fields
-- ✅ Enable Row Level Security (RLS) to protect user data
-- ✅ Create policies so users can only see and manage their own plants
-- ✅ Add database indexes for better performance
+- Create the `plants` table with all required fields
+- Enable Row Level Security (RLS) to protect user data
+- Create policies so users can only see and manage their own plants
+- Add database indexes for better performance
 
 ### Step 4: Verify Setup
 

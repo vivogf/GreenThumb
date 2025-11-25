@@ -1,9 +1,12 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
-import type { User } from '@supabase/supabase-js';
+
+interface SimpleUser {
+  id: string;
+  is_anonymous: boolean;
+}
 
 interface AuthContextType {
-  user: User | null;
+  user: SimpleUser | null;
   loading: boolean;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -12,32 +15,26 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<SimpleUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-
-    return () => subscription.unsubscribe();
+    const stored = localStorage.getItem("userId");
+    if (stored) {
+      setUser({ id: stored, is_anonymous: true });
+    }
+    setLoading(false);
   }, []);
 
   const signIn = async () => {
-    const { error } = await supabase.auth.signInAnonymously();
-    if (error) throw error;
+    const userId = crypto.randomUUID();
+    localStorage.setItem("userId", userId);
+    setUser({ id: userId, is_anonymous: true });
   };
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    localStorage.removeItem("userId");
+    setUser(null);
   };
 
   const value = {

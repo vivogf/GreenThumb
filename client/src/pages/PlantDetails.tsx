@@ -1,13 +1,12 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useLocation, useParams } from 'wouter';
-import { supabase } from '@/lib/supabase';
 import type { Plant } from '@shared/schema';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
-import { queryClient } from '@/lib/queryClient';
+import { queryClient, apiRequest } from '@/lib/queryClient';
 import { ArrowLeft, MapPin, Droplets, Calendar, Trash2 } from 'lucide-react';
 import { format, addDays, formatDistanceToNow } from 'date-fns';
 import {
@@ -30,25 +29,16 @@ export default function PlantDetails() {
   const { data: plant, isLoading } = useQuery<Plant>({
     queryKey: ['/api/plants', id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('plants')
-        .select('*')
-        .eq('id', id)
-        .single();
-
-      if (error) throw error;
-      return data;
+      // For now, fetch all plants and filter locally
+      const res = await apiRequest('GET', '/api/plants');
+      const plants = await res.json();
+      return plants.find((p: Plant) => p.id === id);
     },
   });
 
   const deletePlantMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase
-        .from('plants')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
+      await apiRequest('DELETE', `/api/plants/${id}`);
     },
     onSuccess: () => {
       toast({
@@ -69,15 +59,10 @@ export default function PlantDetails() {
 
   const waterPlantMutation = useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase
-        .from('plants')
-        .update({ last_watered_date: new Date().toISOString() })
-        .eq('id', id)
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
+      const res = await apiRequest('PATCH', `/api/plants/${id}`, {
+        last_watered_date: new Date().toISOString(),
+      });
+      return res.json();
     },
     onSuccess: () => {
       toast({

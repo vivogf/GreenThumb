@@ -90,13 +90,18 @@ export default function AddPlant() {
   });
 
   const onSubmit = async (data: any) => {
+    console.log('Form submitted with data:', data);
+    console.log('Form errors:', form.formState.errors);
+    
     if (selectedFile) {
       setIsUploading(true);
       try {
         const photoUrl = await uploadPhoto(selectedFile);
         data.photo_url = photoUrl;
+        console.log('Uploading plant with photo:', data);
         addPlantMutation.mutate(data);
       } catch (error: any) {
+        console.error('Photo upload failed:', error);
         toast({
           title: 'Upload failed',
           description: error.message,
@@ -108,6 +113,7 @@ export default function AddPlant() {
     } else {
       // Use a default placeholder image if no photo selected
       data.photo_url = 'https://images.unsplash.com/photo-1518531933037-91b2f8c3a149?w=400&h=400&fit=crop';
+      console.log('Adding plant with default photo:', data);
       addPlantMutation.mutate(data);
     }
   };

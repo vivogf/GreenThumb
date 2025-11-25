@@ -1,0 +1,100 @@
+SES Removing unpermitted intrinsics lockdown-install.js:1:203117
+  Removing intrinsics.%MapPrototype%.getOrInsert lockdown-install.js:1:202962
+  Removing intrinsics.%MapPrototype%.getOrInsertComputed lockdown-install.js:1:202962
+  Removing intrinsics.%WeakMapPrototype%.getOrInsert lockdown-install.js:1:202962
+  Removing intrinsics.%WeakMapPrototype%.getOrInsertComputed lockdown-install.js:1:202962
+  Removing intrinsics.%DatePrototype%.toTemporalInstant lockdown-install.js:1:202962
+[Coframe] Replit Enterprise watcher loaded cf.js:8:13
+NetworkError when attempting to fetch resource. 1d175b218ac613db.js:2:102208
+[analytics.js] Failed to load Analytics.js TypeError: NetworkError when attempting to fetch resource. 1d175b218ac613db.js:2:102208
+Error sending segment performance metrics TypeError: NetworkError when attempting to fetch resource. 1d175b218ac613db.js:2:102208
+
+      /////////////////////
+   ///////////////////////////
+  ////////@@@@@@@//////////////
+  ////////@@@@@@@//////////////
+  ////////@@@@@@@//////////////        Curious and driven?
+  ///////////////@@@@@@@///////        Work with us!
+  ///////////////@@@@@@@///////
+  ///////////////@@@@@@@///////        https://join.replit.com/hack.with.us
+  ////////@@@@@@@//////////////
+  ////////@@@@@@@//////////////
+  ////////@@@@@@#//////////////
+   ///////////////////////////
+      /////////////////////
+      1d175b218ac613db.js:2:102208
+Download the Apollo DevTools for a better development experience: https://addons.mozilla.org/en-US/firefox/addon/apollo-developer-tools/ 1d175b218ac613db.js:2:102208
+[LaunchDarkly] LaunchDarkly client initialized 1d175b218ac613db.js:2:102208
+loadStripe.setLoadParameters was called but an existing Stripe.js script already exists in the document; existing script parameters will be used 1d175b218ac613db.js:2:102208
+ ERROR  [Statsig] A networking error occurred during POST request to https://prodregistryv2.org/v1/rgstr?k=client-Bp7m7pNB6H0fnSGjVtxN5BeWQw4BSAat4OFsXa3VcTF&st=javascript-client&sv=3.26.0&t=1763990263761&sid=e3fa5e72-954d-48b8-99c3-4aabaa2679ae&ec=1&gz=1. TypeError: NetworkError when attempting to fetch resource. TypeError: NetworkError when attempting to fetch resource. 1d175b218ac613db.js:2:102208
+  WARN  [Statsig] Failed to flush events. 1d175b218ac613db.js:2:102208
+ ERROR  [Statsig] A networking error occurred during POST request to https://prodregistryv2.org/v1/rgstr?k=client-Bp7m7pNB6H0fnSGjVtxN5BeWQw4BSAat4OFsXa3VcTF&st=javascript-client&sv=3.26.0&t=1763990263761&sid=e3fa5e72-954d-48b8-99c3-4aabaa2679ae&ec=3007&gz=1. TypeError: NetworkError when attempting to fetch resource. TypeError: NetworkError when attempting to fetch resource. 1d175b218ac613db.js:2:102208
+  WARN  [Statsig] Failed to flush events. 1d175b218ac613db.js:2:102208
+ ERROR  [Statsig] A networking error occurred during POST request to https://prodregistryv2.org/v1/rgstr?k=client-Bp7m7pNB6H0fnSGjVtxN5BeWQw4BSAat4OFsXa3VcTF&st=javascript-client&sv=3.26.0&t=1763990263762&sid=e3fa5e72-954d-48b8-99c3-4aabaa2679ae&ec=3&gz=1. TypeError: NetworkError when attempting to fetch resource. TypeError: NetworkError when attempting to fetch resource. 1d175b218ac613db.js:2:102208
+  WARN  [Statsig] Failed to flush events. 1d175b218ac613db.js:2:102208
+ ERROR  [Statsig] A networking error occurred during POST request to https://prodregistryv2.org/v1/rgstr?k=client-Bp7m7pNB6H0fnSGjVtxN5BeWQw4BSAat4OFsXa3VcTF&st=javascript-client&sv=3.26.0&t=1763990264712&sid=e3fa5e72-954d-48b8-99c3-4aabaa2679ae&ec=1&gz=1. TypeError: NetworkError when attempting to fetch resource. TypeError: NetworkError when attempting to fetch resource. 1d175b218ac613db.js:2:102208
+  WARN  [Statsig] Failed to flush events. 1d175b218ac613db.js:2:102208
+ ERROR  [Statsig] A networking error occurred during POST request to https://prodregistryv2.org/v1/rgstr?k=client-Bp7m7pNB6H0fnSGjVtxN5BeWQw4BSAat4OFsXa3VcTF&st=javascript-client&sv=3.26.0&t=1763990268676&sid=e3fa5e72-954d-48b8-99c3-4aabaa2679ae&ec=2&gz=1. TypeError: NetworkError when attempting to fetch resource. TypeError: NetworkError when attempting to fetch resource. 1d175b218ac613db.js:2:102208
+  WARN  [Statsig] Failed to flush events. 1d175b218ac613db.js:2:102208
+If you do not provide children, you must specify an aria-label for accessibility 2 1d175b218ac613db.js:2:102208
+ ERROR  [Statsig] A networking error occurred during POST request to https://prodregistryv2.org/v1/rgstr?k=client-Bp7m7pNB6H0fnSGjVtxN5BeWQw4BSAat4OFsXa3VcTF&st=javascript-client&sv=3.26.0&t=1763990272512&sid=e3fa5e72-954d-48b8-99c3-4aabaa2679ae&ec=6&gz=1. TypeError: NetworkError when attempting to fetch resource. TypeError: NetworkError when attempting to fetch resource. 1d175b218ac613db.js:2:102208
+  WARN  [Statsig] Failed to flush events. 1d175b218ac613db.js:2:102208
+ ERROR  [Statsig] A networking error occurred during POST request to https://prodregistryv2.org/v1/rgstr?k=client-Bp7m7pNB6H0fnSGjVtxN5BeWQw4BSAat4OFsXa3VcTF&st=javascript-client&sv=3.26.0&t=1763990273421&sid=e3fa5e72-954d-48b8-99c3-4aabaa2679ae&ec=2&gz=1. TypeError: NetworkError when attempting to fetch resource. TypeError: NetworkError when attempting to fetch resource. 1d175b218ac613db.js:2:102208
+  WARN  [Statsig] Failed to flush events. 1d175b218ac613db.js:2:102208
+ ERROR  [Statsig] A networking error occurred during POST request to https://prodregistryv2.org/v1/rgstr?k=client-Bp7m7pNB6H0fnSGjVtxN5BeWQw4BSAat4OFsXa3VcTF&st=javascript-client&sv=3.26.0&t=1763990283782&sid=e3fa5e72-954d-48b8-99c3-4aabaa2679ae&ec=1&gz=1. TypeError: NetworkError when attempting to fetch resource. TypeError: NetworkError when attempting to fetch resource. 1d175b218ac613db.js:2:102208
+  WARN  [Statsig] Failed to flush events. 1d175b218ac613db.js:2:102208
+ ERROR  [Statsig] A networking error occurred during POST request to https://prodregistryv2.org/v1/rgstr?k=client-Bp7m7pNB6H0fnSGjVtxN5BeWQw4BSAat4OFsXa3VcTF&st=javascript-client&sv=3.26.0&t=1763990293369&sid=e3fa5e72-954d-48b8-99c3-4aabaa2679ae&ec=516&gz=1. TypeError: NetworkError when attempting to fetch resource. TypeError: NetworkError when attempting to fetch resource. 1d175b218ac613db.js:2:102208
+  WARN  [Statsig] Failed to flush events. 1d175b218ac613db.js:2:102208
+ ERROR  [Statsig] A networking error occurred during POST request to https://prodregistryv2.org/v1/rgstr?k=client-Bp7m7pNB6H0fnSGjVtxN5BeWQw4BSAat4OFsXa3VcTF&st=javascript-client&sv=3.26.0&t=1763990294388&sid=e3fa5e72-954d-48b8-99c3-4aabaa2679ae&ec=1&gz=1. TypeError: NetworkError when attempting to fetch resource. TypeError: NetworkError when attempting to fetch resource. 1d175b218ac613db.js:2:102208
+  WARN  [Statsig] Failed to flush events. 1d175b218ac613db.js:2:102208
+ ERROR  [Statsig] A networking error occurred during POST request to https://prodregistryv2.org/v1/rgstr?k=client-Bp7m7pNB6H0fnSGjVtxN5BeWQw4BSAat4OFsXa3VcTF&st=javascript-client&sv=3.26.0&t=1763990875679&sid=e3fa5e72-954d-48b8-99c3-4aabaa2679ae&ec=1&gz=1. TypeError: NetworkError when attempting to fetch resource. TypeError: NetworkError when attempting to fetch resource. 1d175b218ac613db.js:2:102208
+  WARN  [Statsig] Failed to flush events. 1d175b218ac613db.js:2:102208
+[Coframe] Mutation callback infinite loop protection triggered, disconnecting mutation observer 
+Object { 0: MutationRecord }
+1d175b218ac613db.js:2:102208
+If you do not provide children, you must specify an aria-label for accessibility 8 1d175b218ac613db.js:2:102208
+stallwart: failed ping 1 stallwart.build.js:1:886
+stallwart: failed ping 2 stallwart.build.js:1:886
+Cache data may be lost when replacing the currentUserReplAgentStatuses field of a Subscription object.
+
+This could cause additional (usually avoidable) network requests to fetch data that were otherwise cached.
+
+To address this problem (which is not a bug in Apollo Client), define a custom merge function for the Subscription.currentUserReplAgentStatuses field, so InMemoryCache can safely merge these objects:
+
+  existing: [{"__typename":"AgentStatusUpdate","replId":"5ed7b60f-8661-4f77-8fc8-1d2eeea27373","statusV2":"PAUSED","label":"Waiting for you","updatedAt":"2025-11-24T07:33:14.732Z","appImageUrl":"https://storage.googleapis.com/screenshot-production-us-central1/5ed7b60f-8661-4f77-8fc8-1d2eeea27373/768df372-e1bb-4645-9fc8-bdd1b2912f15/2Kw234z"}]
+  incoming: []
+
+For more information about these options, please refer to the documentation:
+
+  * Ensuring entity objects have IDs: https://go.apollo.dev/c/generating-unique-identifiers
+  * Defining custom merge functions: https://go.apollo.dev/c/merging-non-normalized-objects
+1d175b218ac613db.js:2:102208
+If you do not provide children, you must specify an aria-label for accessibility 1d175b218ac613db.js:2:102208
+ ERROR  [Statsig] A networking error occurred during POST request to https://prodregistryv2.org/v1/rgstr?k=client-Bp7m7pNB6H0fnSGjVtxN5BeWQw4BSAat4OFsXa3VcTF&st=javascript-client&sv=3.26.0&t=1764077064473&sid=64f1c8eb-8516-4631-835f-f427d2d48949&ec=1018&gz=1. TypeError: NetworkError when attempting to fetch resource. TypeError: NetworkError when attempting to fetch resource. 1d175b218ac613db.js:2:102208
+  WARN  [Statsig] Failed to flush events. 1d175b218ac613db.js:2:102208
+ ERROR  [Statsig] A networking error occurred during POST request to https://prodregistryv2.org/v1/rgstr?k=client-Bp7m7pNB6H0fnSGjVtxN5BeWQw4BSAat4OFsXa3VcTF&st=javascript-client&sv=3.26.0&t=1764077375467&sid=64f1c8eb-8516-4631-835f-f427d2d48949&ec=1518&gz=1. TypeError: NetworkError when attempting to fetch resource. TypeError: NetworkError when attempting to fetch resource. 1d175b218ac613db.js:2:102208
+  WARN  [Statsig] Failed to flush events. 1d175b218ac613db.js:2:102208
+If you do not provide children, you must specify an aria-label for accessibility 9 1d175b218ac613db.js:2:102208
+Предупреждения Content-Security-Policy 4
+SES Removing unpermitted intrinsics lockdown-install.js:1:203117
+  Removing intrinsics.%MapPrototype%.getOrInsert lockdown-install.js:1:202962
+  Removing intrinsics.%MapPrototype%.getOrInsertComputed lockdown-install.js:1:202962
+  Removing intrinsics.%WeakMapPrototype%.getOrInsert lockdown-install.js:1:202962
+  Removing intrinsics.%WeakMapPrototype%.getOrInsertComputed lockdown-install.js:1:202962
+  Removing intrinsics.%DatePrototype%.toTemporalInstant lockdown-install.js:1:202962
+«https://www.google.com/recaptcha/enterprise/anchor?ar=2&k=6LdqhwwoAAAAAFPdw8jCuvY3PaHQItGj3RzOS4fW&co=aHR0cHM6Ly9yZXBsaXQuY29tOjQ0Mw..&hl=ru&v=TkacYOdEJbdB_JjX802TMer9&size=invisible&anchor-ms=20000&execute-ms=15000&cb=4vbe81r7tl0o» был предоставлен разделённый доступ к кукам или хранилищу, так как он был загружен в стороннем контексте и динамический доступ к состоянию включён.
+27d8d563-966a-47c8-8c7c-413fca9c8f5d:121:33
+Игнорируем неподдерживаемые entryTypes: longtask. recaptcha__ru.js:308:353
+ ERROR  [Statsig] A networking error occurred during POST request to https://prodregistryv2.org/v1/rgstr?k=client-Bp7m7pNB6H0fnSGjVtxN5BeWQw4BSAat4OFsXa3VcTF&st=javascript-client&sv=3.26.0&t=1764091113399&sid=c304b8f0-a06c-48c4-81cc-5e908c0cf502&ec=2018&gz=1. TypeError: NetworkError when attempting to fetch resource. TypeError: NetworkError when attempting to fetch resource. 1d175b218ac613db.js:2:102208
+  WARN  [Statsig] Failed to flush events. 1d175b218ac613db.js:2:102208
+If you do not provide children, you must specify an aria-label for accessibility 1d175b218ac613db.js:2:102208
+ ERROR  [Statsig] A networking error occurred during POST request to https://prodregistryv2.org/v1/rgstr?k=client-Bp7m7pNB6H0fnSGjVtxN5BeWQw4BSAat4OFsXa3VcTF&st=javascript-client&sv=3.26.0&t=1764091127990&sid=c304b8f0-a06c-48c4-81cc-5e908c0cf502&ec=1&gz=1. TypeError: NetworkError when attempting to fetch resource. TypeError: NetworkError when attempting to fetch resource. 1d175b218ac613db.js:2:102208
+  WARN  [Statsig] Failed to flush events. 1d175b218ac613db.js:2:102208
+ ERROR  [Statsig] A networking error occurred during POST request to https://prodregistryv2.org/v1/rgstr?k=client-Bp7m7pNB6H0fnSGjVtxN5BeWQw4BSAat4OFsXa3VcTF&st=javascript-client&sv=3.26.0&t=1764091177679&sid=c304b8f0-a06c-48c4-81cc-5e908c0cf502&ec=2519&gz=1. TypeError: NetworkError when attempting to fetch resource. TypeError: NetworkError when attempting to fetch resource. 1d175b218ac613db.js:2:102208
+  WARN  [Statsig] Failed to flush events. 1d175b218ac613db.js:2:102208
+  WARN  [Statsig] Unable to save failed logs to storage 1d175b218ac613db.js:2:102208
+ ERROR  [Statsig] A networking error occurred during POST request to https://prodregistryv2.org/v1/rgstr?k=client-Bp7m7pNB6H0fnSGjVtxN5BeWQw4BSAat4OFsXa3VcTF&st=javascript-client&sv=3.26.0&t=1764091179529&sid=c304b8f0-a06c-48c4-81cc-5e908c0cf502&ec=1&gz=1. TypeError: NetworkError when attempting to fetch resource. TypeError: NetworkError when attempting to fetch resource. 1d175b218ac613db.js:2:102208
+  WARN  [Statsig] Failed to flush events. 1d175b218ac613db.js:2:102208
+ ERROR  [Statsig] A networking error occurred during POST request to https://prodregistryv2.org/v1/rgstr?k=client-Bp7m7pNB6H0fnSGjVtxN5BeWQw4BSAat4OFsXa3VcTF&st=javascript-client&sv=3.26.0&t=1764091190937&sid=c304b8f0-a06c-48c4-81cc-5e908c0cf502&ec=2520&gz=1. TypeError: NetworkError when attempting to fetch resource. TypeError: NetworkError when attempting to fetch resource. 1d175b218ac613db.js:2:102208
+  WARN  [Statsig] Failed to flush events. 1d175b218ac613db.js:2:102208
+  WARN  [Statsig] Unable to save failed logs to storage 1d175b218ac613db.js:2:102208

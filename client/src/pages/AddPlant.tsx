@@ -48,6 +48,7 @@ export default function AddPlant() {
       }
 
       setSelectedFile(file);
+      form.setValue('photo_url', file.name);
       const reader = new FileReader();
       reader.onloadend = () => {
         setPreview(reader.result as string);
@@ -106,7 +107,7 @@ export default function AddPlant() {
   });
 
   const onSubmit = async (data: InsertPlant) => {
-    if (selectedFile && !data.photo_url) {
+    if (selectedFile) {
       setIsUploading(true);
       try {
         const photoUrl = await uploadPhotoToSupabase(selectedFile);
@@ -202,7 +203,7 @@ export default function AddPlant() {
                               onClick={() => {
                                 setSelectedFile(null);
                                 setPreview(null);
-                                field.onChange('');
+                                form.setValue('photo_url', '');
                               }}
                               className="absolute top-2 right-2 bg-destructive text-destructive-foreground rounded-full p-1 hover:bg-destructive/90"
                               data-testid="button-remove-photo"

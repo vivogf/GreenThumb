@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
-import { supabase } from '@/lib/supabase';
 import { PlantCard, PlantCardSkeleton } from '@/components/PlantCard';
 import type { Plant } from '@shared/schema';
 import { addDays, isPast, isToday } from 'date-fns';
-import { queryClient } from '@/lib/queryClient';
+import { queryClient, apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { Sprout } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -17,28 +16,14 @@ export default function Dashboard() {
 
   const { data: plants, isLoading } = useQuery<Plant[]>({
     queryKey: ['/api/plants'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('plants')
-        .select('*')
-        .order('last_watered_date', { ascending: true });
-
-      if (error) throw error;
-      return data;
-    },
   });
 
   const waterPlantMutation = useMutation({
     mutationFn: async (plantId: string) => {
-      const { data, error } = await supabase
-        .from('plants')
-        .update({ last_watered_date: new Date().toISOString() })
-        .eq('id', plantId)
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
+      const res = await apiRequest('PATCH', `/api/plants/${plantId}`, {
+        last_watered_date: new Date().toISOString(),
+      });
+      return res.json();
     },
     onMutate: async (plantId) => {
       setWateringPlantId(plantId);

@@ -1,29 +1,23 @@
 import { z } from "zod";
+import { pgTable, text, integer, timestamp, uuid } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
 
-export interface Plant {
-  id: string;
-  user_id: string;
-  name: string;
-  location: string;
-  photo_url: string;
-  water_frequency_days: number;
-  last_watered_date: string;
-  notes: string;
-}
-
-export const insertPlantSchema = z.object({
-  name: z.string().min(1, "Plant name is required"),
-  location: z.string().min(1, "Location is required"),
-  photo_url: z.string().min(1, "Photo is required"),
-  water_frequency_days: z.number().min(1, "Frequency must be at least 1 day"),
-  last_watered_date: z.string(),
-  notes: z.string().optional().default(""),
+export const plants = pgTable("plants", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  user_id: text("user_id").notNull(),
+  name: text("name").notNull(),
+  location: text("location").notNull(),
+  photo_url: text("photo_url").notNull(),
+  water_frequency_days: integer("water_frequency_days").notNull(),
+  last_watered_date: text("last_watered_date").notNull(),
+  notes: text("notes").default(""),
+  created_at: timestamp("created_at").defaultNow().notNull(),
 });
 
+export type Plant = typeof plants.$inferSelect;
+export const insertPlantSchema = createInsertSchema(plants)
+  .omit({ id: true, created_at: true })
+  .extend({
+    last_watered_date: z.string(),
+  });
 export type InsertPlant = z.infer<typeof insertPlantSchema>;
-
-export interface User {
-  id: string;
-  email: string;
-  created_at: string;
-}

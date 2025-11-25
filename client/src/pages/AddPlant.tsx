@@ -2,9 +2,9 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
-import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { insertPlantSchema, type InsertPlant } from '@shared/schema';
+import { apiRequest } from '@/lib/queryClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -23,7 +23,7 @@ export default function AddPlant() {
   const [preview, setPreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  const form = useForm<InsertPlant>({
+  const form = useForm<any>({
     resolver: zodResolver(insertPlantSchema),
     defaultValues: {
       name: '',
@@ -57,37 +57,20 @@ export default function AddPlant() {
     }
   };
 
-  const uploadPhotoToSupabase = async (file: File): Promise<string> => {
-    if (!user) throw new Error('User not authenticated');
-
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${user.id}/${Date.now()}.${fileExt}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from('plant-photos')
-      .upload(fileName, file);
-
-    if (uploadError) throw uploadError;
-
-    const { data } = supabase.storage
-      .from('plant-photos')
-      .getPublicUrl(fileName);
-
-    return data.publicUrl;
+  const uploadPhoto = async (file: File): Promise<string> => {
+    // Store as base64 for demo - in production, use proper file storage
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
   };
 
   const addPlantMutation = useMutation({
-    mutationFn: async (plant: InsertPlant) => {
-      if (!user) throw new Error('User not authenticated');
-      
-      const { data, error } = await supabase
-        .from('plants')
-        .insert([{ ...plant, user_id: user.id }])
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
+    mutationFn: async (plant: any) => {
+      const res = await apiRequest('POST', '/api/plants', plant);
+      return res.json();
     },
     onSuccess: () => {
       toast({
@@ -106,14 +89,11 @@ export default function AddPlant() {
     },
   });
 
-  const onSubmit = async (data: InsertPlant) => {
-    console.log('Current user:', user);
-    console.log('Submitting plant data:', { ...data, user_id: user?.id });
-    
+  const onSubmit = async (data: any) => {
     if (selectedFile) {
       setIsUploading(true);
       try {
-        const photoUrl = await uploadPhotoToSupabase(selectedFile);
+        const photoUrl = await uploadPhoto(selectedFile);
         data.photo_url = photoUrl;
         addPlantMutation.mutate(data);
       } catch (error: any) {

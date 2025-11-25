@@ -107,6 +107,9 @@ export default function AddPlant() {
   });
 
   const onSubmit = async (data: InsertPlant) => {
+    console.log('Current user:', user);
+    console.log('Submitting plant data:', { ...data, user_id: user?.id });
+    
     if (selectedFile) {
       setIsUploading(true);
       try {

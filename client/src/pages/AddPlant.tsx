@@ -106,6 +106,8 @@ export default function AddPlant() {
         setIsUploading(false);
       }
     } else {
+      // Use a default placeholder image if no photo selected
+      data.photo_url = 'https://images.unsplash.com/photo-1518531933037-91b2f8c3a149?w=400&h=400&fit=crop';
       addPlantMutation.mutate(data);
     }
   };
@@ -258,7 +260,7 @@ export default function AddPlant() {
               <Button
                 type="submit"
                 className="w-full"
-                disabled={addPlantMutation.isPending || isUploading || !selectedFile}
+                disabled={addPlantMutation.isPending || isUploading}
                 data-testid="button-submit-plant"
               >
                 {isUploading ? 'Uploading Photo...' : addPlantMutation.isPending ? 'Adding Plant...' : 'Add Plant'}

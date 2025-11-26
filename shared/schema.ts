@@ -8,6 +8,7 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   password: text("password").notNull(),
   name: text("name"),
+  notification_time: text("notification_time").default("09:00"),
   created_at: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -37,6 +38,12 @@ export const plants = pgTable("plants", {
   photo_url: text("photo_url").notNull(),
   water_frequency_days: integer("water_frequency_days").notNull(),
   last_watered_date: text("last_watered_date").notNull(),
+  fertilize_frequency_days: integer("fertilize_frequency_days"),
+  last_fertilized_date: text("last_fertilized_date"),
+  repot_frequency_months: integer("repot_frequency_months"),
+  last_repotted_date: text("last_repotted_date"),
+  prune_frequency_months: integer("prune_frequency_months"),
+  last_pruned_date: text("last_pruned_date"),
   notes: text("notes").default(""),
   created_at: timestamp("created_at").defaultNow().notNull(),
 });
@@ -49,6 +56,12 @@ export const insertPlantSchema = createInsertSchema(plants)
   .extend({
     last_watered_date: z.string(),
     notes: z.string().optional().default(""),
+    fertilize_frequency_days: z.number().optional(),
+    last_fertilized_date: z.string().optional(),
+    repot_frequency_months: z.number().optional(),
+    last_repotted_date: z.string().optional(),
+    prune_frequency_months: z.number().optional(),
+    last_pruned_date: z.string().optional(),
   });
 
 export type InsertPlant = z.infer<typeof insertPlantSchema>;

@@ -21,8 +21,8 @@ export default function Profile() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
 
-  const handleSignOut = () => {
-    signOut();
+  const handleSignOut = async () => {
+    await signOut();
     toast({
       title: 'Signed out',
       description: 'You have been signed out successfully.',

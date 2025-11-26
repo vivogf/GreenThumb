@@ -6,6 +6,8 @@ import express, {
   Response,
   NextFunction,
 } from "express";
+import session from "express-session";
+import MemoryStore from "memorystore";
 
 import { registerRoutes } from "./routes";
 
@@ -22,11 +24,18 @@ export function log(message: string, source = "express") {
 
 export const app = express();
 
+declare module 'express-session' {
+  interface SessionData {
+    userId?: number;
+  }
+}
+
 declare module 'http' {
   interface IncomingMessage {
     rawBody: unknown
   }
 }
+
 app.use(express.json({
   limit: '50mb',
   verify: (req, _res, buf) => {
@@ -34,6 +43,21 @@ app.use(express.json({
   }
 }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
+
+const SessionStore = MemoryStore(session);
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'greenthumb-secret-key-development',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  },
+  store: new SessionStore({
+    checkPeriod: 86400000,
+  }),
+}));
 
 app.use((req, res, next) => {
   const start = Date.now();

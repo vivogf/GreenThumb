@@ -12,7 +12,7 @@ interface AuthContextType {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name?: string) => Promise<void>;
-  signOut: () => void;
+  signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -22,15 +22,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const stored = localStorage.getItem("user");
-    if (stored) {
+    const checkSession = async () => {
       try {
-        setUser(JSON.parse(stored));
-      } catch {
-        localStorage.removeItem("user");
+        const response = await fetch('/api/auth/me', {
+          credentials: 'include',
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          setUser(data.user);
+        }
+      } catch (error) {
+        console.error('Session check failed:', error);
+      } finally {
+        setLoading(false);
       }
-    }
-    setLoading(false);
+    };
+
+    checkSession();
   }, []);
 
   const signIn = async (email: string, password: string) => {
@@ -38,6 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
+      credentials: 'include',
     });
     
     const data = await response.json();
@@ -47,7 +57,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     
     setUser(data.user);
-    localStorage.setItem("user", JSON.stringify(data.user));
   };
 
   const register = async (email: string, password: string, name?: string) => {
@@ -55,6 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, name }),
+      credentials: 'include',
     });
     
     const data = await response.json();
@@ -64,12 +74,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     
     setUser(data.user);
-    localStorage.setItem("user", JSON.stringify(data.user));
   };
 
-  const signOut = () => {
+  const signOut = async () => {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
     setUser(null);
-    localStorage.removeItem("user");
   };
 
   const value = {

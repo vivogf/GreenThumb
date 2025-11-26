@@ -1,7 +1,7 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertPlantSchema } from "@shared/schema";
+import { insertPlantSchema, insertPlantWithUserSchema } from "@shared/schema";
 
 declare global {
   namespace Express {
@@ -31,10 +31,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "User ID required" });
       }
 
-      const plant = insertPlantSchema.parse(req.body);
-      const result = await storage.addPlant({ ...plant, user_id });
+      const plantData = insertPlantSchema.parse(req.body);
+      const plantWithUser = { ...plantData, user_id };
+      const result = await storage.addPlant(plantWithUser);
       res.json(result);
     } catch (error: any) {
+      console.error("Error adding plant:", error);
       res.status(400).json({ error: error.message });
     }
   });

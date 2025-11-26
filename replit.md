@@ -202,13 +202,21 @@ All protected routes use a `ProtectedRoute` wrapper component that enforces auth
 
 ## Push Notifications
 
-GreenThumb supports Web Push notifications to remind users when their plants need watering.
+GreenThumb supports Web Push notifications to remind users about all plant care tasks including watering, fertilizing, repotting, and pruning.
 
 ### How It Works
 
 1. **Service Worker**: A service worker (`client/public/sw.js`) handles incoming push notifications
 2. **VAPID Keys**: Web Push uses VAPID authentication (keys stored in environment variables)
 3. **Subscriptions**: User subscriptions stored in `push_subscriptions` table
+4. **Customizable Time**: Users can set their preferred notification time in the Profile settings
+
+### Care Types Monitored
+
+- **Watering**: Checks `water_frequency_days` and `last_watered_date`
+- **Fertilizing**: Checks `fertilize_frequency_days` and `last_fertilized_date`
+- **Repotting**: Checks `repot_frequency_months` and `last_repotted_date`
+- **Pruning**: Checks `prune_frequency_months` and `last_pruned_date`
 
 ### API Endpoints
 
@@ -217,7 +225,7 @@ GreenThumb supports Web Push notifications to remind users when their plants nee
 - `GET /api/push/subscription` - Check if user is subscribed
 - `GET /api/push/vapid-public-key` - Get VAPID public key for frontend
 - `POST /api/push/test` - Send test notification to current user
-- `POST /api/push/check-plants` - Check all plants and send notifications to users with plants needing water
+- `POST /api/push/check-plants` - Check all plants and send notifications for all care types
 
 ### Environment Variables
 
@@ -227,4 +235,4 @@ GreenThumb supports Web Push notifications to remind users when their plants nee
 
 ### Triggering Notifications
 
-The `/api/push/check-plants` endpoint can be called periodically (via cron job or external scheduler) to check all plants and send notifications to users whose plants need watering.
+The `/api/push/check-plants` endpoint can be called periodically (via cron job or external scheduler) to check all plants and send notifications to users whose plants need any type of care.

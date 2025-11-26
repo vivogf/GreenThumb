@@ -197,3 +197,32 @@ All protected routes use a `ProtectedRoute` wrapper component that enforces auth
 - `@replit/vite-plugin-runtime-error-modal` - Error overlay for development
 - `@replit/vite-plugin-cartographer` - Replit integration
 - `@replit/vite-plugin-dev-banner` - Development environment indicator
+
+## Push Notifications
+
+GreenThumb supports Web Push notifications to remind users when their plants need watering.
+
+### How It Works
+
+1. **Service Worker**: A service worker (`client/public/sw.js`) handles incoming push notifications
+2. **VAPID Keys**: Web Push uses VAPID authentication (keys stored in environment variables)
+3. **Subscriptions**: User subscriptions stored in `push_subscriptions` table
+
+### API Endpoints
+
+- `POST /api/push/subscribe` - Subscribe to push notifications
+- `DELETE /api/push/subscribe` - Unsubscribe from notifications  
+- `GET /api/push/subscription` - Check if user is subscribed
+- `GET /api/push/vapid-public-key` - Get VAPID public key for frontend
+- `POST /api/push/test` - Send test notification to current user
+- `POST /api/push/check-plants` - Check all plants and send notifications to users with plants needing water
+
+### Environment Variables
+
+- `VAPID_PUBLIC_KEY` - Public key for Web Push
+- `VAPID_PRIVATE_KEY` - Private key for Web Push (secret)
+- `VITE_VAPID_PUBLIC_KEY` - Public key exposed to frontend
+
+### Triggering Notifications
+
+The `/api/push/check-plants` endpoint can be called periodically (via cron job or external scheduler) to check all plants and send notifications to users whose plants need watering.

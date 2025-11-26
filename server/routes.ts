@@ -316,24 +316,85 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const plants = await storage.getAllPlants();
       const subscriptions = await storage.getAllPushSubscriptions();
+      const users = await storage.getAllUsers();
       const today = startOfDay(new Date());
       
       const notificationsSent: string[] = [];
       
       for (const subscription of subscriptions) {
+        const user = users.find(u => u.id === subscription.user_id);
         const userPlants = plants.filter(p => p.user_id === String(subscription.user_id));
-        const plantsNeedingWater: string[] = [];
+        
+        const careNeeded: { water: string[]; fertilize: string[]; repot: string[]; prune: string[] } = {
+          water: [],
+          fertilize: [],
+          repot: [],
+          prune: [],
+        };
         
         for (const plant of userPlants) {
+          // Check watering
           const lastWatered = new Date(plant.last_watered_date);
           const nextWaterDate = addDays(lastWatered, plant.water_frequency_days);
-          
           if (isToday(nextWaterDate) || isBefore(nextWaterDate, today)) {
-            plantsNeedingWater.push(plant.name);
+            careNeeded.water.push(plant.name);
+          }
+          
+          // Check fertilizing
+          if (plant.fertilize_frequency_days && plant.last_fertilized_date) {
+            const lastFertilized = new Date(plant.last_fertilized_date);
+            const nextFertilizeDate = addDays(lastFertilized, plant.fertilize_frequency_days);
+            if (isToday(nextFertilizeDate) || isBefore(nextFertilizeDate, today)) {
+              careNeeded.fertilize.push(plant.name);
+            }
+          }
+          
+          // Check repotting (uses months)
+          if (plant.repot_frequency_months && plant.last_repotted_date) {
+            const lastRepotted = new Date(plant.last_repotted_date);
+            const nextRepotDate = new Date(lastRepotted);
+            nextRepotDate.setMonth(nextRepotDate.getMonth() + plant.repot_frequency_months);
+            if (isToday(nextRepotDate) || isBefore(startOfDay(nextRepotDate), today)) {
+              careNeeded.repot.push(plant.name);
+            }
+          }
+          
+          // Check pruning (uses months)
+          if (plant.prune_frequency_months && plant.last_pruned_date) {
+            const lastPruned = new Date(plant.last_pruned_date);
+            const nextPruneDate = new Date(lastPruned);
+            nextPruneDate.setMonth(nextPruneDate.getMonth() + plant.prune_frequency_months);
+            if (isToday(nextPruneDate) || isBefore(startOfDay(nextPruneDate), today)) {
+              careNeeded.prune.push(plant.name);
+            }
           }
         }
         
-        if (plantsNeedingWater.length > 0) {
+        // Build notification message
+        const messages: string[] = [];
+        
+        if (careNeeded.water.length > 0) {
+          messages.push(careNeeded.water.length === 1
+            ? `Water: ${careNeeded.water[0]}`
+            : `Water ${careNeeded.water.length} plants`);
+        }
+        if (careNeeded.fertilize.length > 0) {
+          messages.push(careNeeded.fertilize.length === 1
+            ? `Fertilize: ${careNeeded.fertilize[0]}`
+            : `Fertilize ${careNeeded.fertilize.length} plants`);
+        }
+        if (careNeeded.repot.length > 0) {
+          messages.push(careNeeded.repot.length === 1
+            ? `Repot: ${careNeeded.repot[0]}`
+            : `Repot ${careNeeded.repot.length} plants`);
+        }
+        if (careNeeded.prune.length > 0) {
+          messages.push(careNeeded.prune.length === 1
+            ? `Prune: ${careNeeded.prune[0]}`
+            : `Prune ${careNeeded.prune.length} plants`);
+        }
+        
+        if (messages.length > 0) {
           const pushSubscription = {
             endpoint: subscription.endpoint,
             keys: {
@@ -342,9 +403,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             },
           };
           
-          const message = plantsNeedingWater.length === 1
-            ? `Time to water ${plantsNeedingWater[0]}!`
-            : `${plantsNeedingWater.length} plants need watering: ${plantsNeedingWater.join(", ")}`;
+          const message = messages.join(" | ");
           
           try {
             await webpush.sendNotification(pushSubscription, message);

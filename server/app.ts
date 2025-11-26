@@ -24,6 +24,9 @@ export function log(message: string, source = "express") {
 
 export const app = express();
 
+// Trust proxy for Replit's HTTPS termination
+app.set('trust proxy', 1);
+
 declare module 'express-session' {
   interface SessionData {
     userId?: number;
@@ -53,6 +56,7 @@ app.use(session({
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
     maxAge: 7 * 24 * 60 * 60 * 1000,
+    sameSite: 'lax',
   },
   store: new PgStore({
     conString: process.env.DATABASE_URL,

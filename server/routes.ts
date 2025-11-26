@@ -1,7 +1,7 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertPlantSchema, insertPlantWithUserSchema } from "@shared/schema";
+import { insertPlantSchema, registerSchema, loginSchema } from "@shared/schema";
 
 declare global {
   namespace Express {
@@ -21,6 +21,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
       req.session = { user_id: userId };
     }
     next();
+  });
+
+  // Auth routes
+  app.post("/api/auth/register", async (req: Request, res) => {
+    try {
+      const data = registerSchema.parse(req.body);
+      
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(data.email);
+      if (existingUser) {
+        return res.status(400).json({ error: "Email already registered" });
+      }
+      
+      const user = await storage.createUser({
+        email: data.email.toLowerCase(),
+        password: data.password,
+        name: data.name || null,
+      });
+      
+      // Return user without password
+      const { password: _, ...safeUser } = user;
+      res.json({ user: safeUser });
+    } catch (error: any) {
+      console.error("Registration error:", error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/auth/login", async (req: Request, res) => {
+    try {
+      const data = loginSchema.parse(req.body);
+      
+      const user = await storage.validatePassword(data.email, data.password);
+      if (!user) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+      
+      // Return user without password
+      const { password: _, ...safeUser } = user;
+      res.json({ user: safeUser });
+    } catch (error: any) {
+      console.error("Login error:", error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Get all users (for admin view)
+  app.get("/api/users", async (req: Request, res) => {
+    try {
+      const allUsers = await storage.getAllUsers();
+      // Return users without passwords
+      const safeUsers = allUsers.map(({ password: _, ...user }) => user);
+      res.json(safeUsers);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
   });
 
   // Plant routes

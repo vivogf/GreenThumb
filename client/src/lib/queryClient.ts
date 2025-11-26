@@ -8,13 +8,16 @@ async function throwIfResNotOk(res: Response) {
 }
 
 function getUserId(): string {
-  const stored = localStorage.getItem("userId");
-  if (!stored) {
-    const newId = crypto.randomUUID();
-    localStorage.setItem("userId", newId);
-    return newId;
+  const stored = localStorage.getItem("user");
+  if (stored) {
+    try {
+      const user = JSON.parse(stored);
+      return String(user.id);
+    } catch {
+      return "";
+    }
   }
-  return stored;
+  return "";
 }
 
 export async function apiRequest(

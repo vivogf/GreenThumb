@@ -1,12 +1,21 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { plants, type Plant, type InsertPlant } from "@shared/schema";
+import { plants, users, type Plant, type InsertPlant, type User, type InsertUser } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import bcrypt from "bcryptjs";
 
 const client = postgres(process.env.DATABASE_URL!);
 const db = drizzle(client);
 
 export interface IStorage {
+  // User methods
+  createUser(user: InsertUser): Promise<User>;
+  getUserByEmail(email: string): Promise<User | null>;
+  getUserById(id: number): Promise<User | null>;
+  getAllUsers(): Promise<User[]>;
+  validatePassword(email: string, password: string): Promise<User | null>;
+  
+  // Plant methods
   addPlant(plant: InsertPlant & { user_id: string }): Promise<Plant>;
   getPlantsByUserId(userId: string): Promise<Plant[]>;
   updatePlant(id: string, plant: Partial<InsertPlant>): Promise<Plant>;
@@ -14,6 +23,45 @@ export interface IStorage {
 }
 
 export class DbStorage implements IStorage {
+  // User methods
+  async createUser(user: InsertUser): Promise<User> {
+    const hashedPassword = await bcrypt.hash(user.password, 10);
+    const [result] = await db
+      .insert(users)
+      .values({ ...user, password: hashedPassword })
+      .returning();
+    return result;
+  }
+
+  async getUserByEmail(email: string): Promise<User | null> {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email.toLowerCase()));
+    return user || null;
+  }
+
+  async getUserById(id: number): Promise<User | null> {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, id));
+    return user || null;
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    return await db.select().from(users);
+  }
+
+  async validatePassword(email: string, password: string): Promise<User | null> {
+    const user = await this.getUserByEmail(email);
+    if (!user) return null;
+    
+    const isValid = await bcrypt.compare(password, user.password);
+    return isValid ? user : null;
+  }
+
+  // Plant methods
   async addPlant(plant: InsertPlant & { user_id: string }): Promise<Plant> {
     const [result] = await db.insert(plants).values(plant).returning();
     return result;

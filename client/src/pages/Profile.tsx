@@ -4,9 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { useLocation } from 'wouter';
-import { LogOut, User, Leaf, Bell, BellOff } from 'lucide-react';
+import { LogOut, User, Leaf, Bell, BellOff, Clock } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,12 +34,14 @@ function urlBase64ToUint8Array(base64String: string) {
 }
 
 export default function Profile() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, updateUser } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [notificationsSupported, setNotificationsSupported] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [notificationTime, setNotificationTime] = useState(user?.notification_time || '09:00');
+  const [isSavingTime, setIsSavingTime] = useState(false);
 
   useEffect(() => {
     const checkNotificationSupport = async () => {
@@ -172,6 +175,36 @@ export default function Profile() {
     }
   };
 
+  const handleSaveNotificationTime = async () => {
+    setIsSavingTime(true);
+    try {
+      const response = await fetch('/api/auth/update-notification-time', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ notification_time: notificationTime }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        updateUser(data.user);
+        toast({
+          title: 'Settings saved',
+          description: 'Notification time updated successfully.',
+        });
+      } else {
+        throw new Error('Failed to update notification time');
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to save notification time.',
+        variant: 'destructive',
+      });
+    }
+    setIsSavingTime(false);
+  };
+
   const handleSignOut = async () => {
     await signOut();
     toast({
@@ -235,15 +268,46 @@ export default function Profile() {
                 Get notified when your plants need watering.
               </p>
               {notificationsEnabled && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleTestNotification}
-                  className="w-full"
-                  data-testid="button-test-notification"
-                >
-                  Send Test Notification
-                </Button>
+                <>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-primary" />
+                      <Label htmlFor="notification-time" className="text-sm font-medium">
+                        Notification Time
+                      </Label>
+                    </div>
+                    <div className="flex gap-2">
+                      <Input
+                        id="notification-time"
+                        type="time"
+                        value={notificationTime}
+                        onChange={(e) => setNotificationTime(e.target.value)}
+                        className="flex-1"
+                        data-testid="input-notification-time"
+                      />
+                      <Button
+                        size="sm"
+                        onClick={handleSaveNotificationTime}
+                        disabled={isSavingTime}
+                        data-testid="button-save-notification-time"
+                      >
+                        {isSavingTime ? 'Saving...' : 'Save'}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Choose when you want to receive daily reminders (your local time).
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleTestNotification}
+                    className="w-full"
+                    data-testid="button-test-notification"
+                  >
+                    Send Test Notification
+                  </Button>
+                </>
               )}
             </div>
           )}

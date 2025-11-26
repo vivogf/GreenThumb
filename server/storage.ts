@@ -14,6 +14,7 @@ export interface IStorage {
   getUserById(id: number): Promise<User | null>;
   getAllUsers(): Promise<User[]>;
   validatePassword(email: string, password: string): Promise<User | null>;
+  updateUserNotificationTime(userId: number, notificationTime: string): Promise<User | null>;
   
   // Plant methods
   addPlant(plant: InsertPlant & { user_id: string }): Promise<Plant>;
@@ -66,6 +67,15 @@ export class DbStorage implements IStorage {
     
     const isValid = await bcrypt.compare(password, user.password);
     return isValid ? user : null;
+  }
+
+  async updateUserNotificationTime(userId: number, notificationTime: string): Promise<User | null> {
+    const [result] = await db
+      .update(users)
+      .set({ notification_time: notificationTime })
+      .where(eq(users.id, userId))
+      .returning();
+    return result || null;
   }
 
   // Plant methods

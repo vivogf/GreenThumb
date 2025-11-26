@@ -90,6 +90,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ user: safeUser });
   });
 
+  app.patch("/api/auth/update-notification-time", requireAuth, async (req: Request, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { notification_time } = req.body;
+      
+      if (!notification_time || typeof notification_time !== 'string') {
+        return res.status(400).json({ error: "Invalid notification time" });
+      }
+      
+      // Validate time format HH:MM
+      const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
+      if (!timeRegex.test(notification_time)) {
+        return res.status(400).json({ error: "Invalid time format. Use HH:MM (e.g., 09:00)" });
+      }
+      
+      const user = await storage.updateUserNotificationTime(userId, notification_time);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      const { password: _, ...safeUser } = user;
+      res.json({ user: safeUser });
+    } catch (error: any) {
+      console.error("Error updating notification time:", error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
   // Plant routes (protected)
   app.post("/api/plants", requireAuth, async (req: Request, res) => {
     try {
@@ -128,6 +156,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deletePlant(req.params.id);
       res.json({ success: true });
     } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Mass actions for plants
+  app.post("/api/plants/water-all", requireAuth, async (req: Request, res) => {
+    try {
+      const userId = req.session.userId!;
+      const userPlants = await storage.getPlantsByUserId(String(userId));
+      const today = startOfDay(new Date());
+      
+      // Find plants that need watering (overdue or due today)
+      const plantsNeedingWater = userPlants.filter((plant) => {
+        const lastWatered = startOfDay(new Date(plant.last_watered_date));
+        const nextWateringDate = addDays(lastWatered, plant.water_frequency_days);
+        return nextWateringDate <= today;
+      });
+      
+      // Water all plants that need it
+      await Promise.all(
+        plantsNeedingWater.map((plant) =>
+          storage.updatePlant(plant.id, {
+            last_watered_date: new Date().toISOString(),
+          })
+        )
+      );
+      
+      res.json({ success: true, count: plantsNeedingWater.length });
+    } catch (error: any) {
+      console.error("Error watering all plants:", error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/plants/postpone-all", requireAuth, async (req: Request, res) => {
+    try {
+      const userId = req.session.userId!;
+      const userPlants = await storage.getPlantsByUserId(String(userId));
+      const today = startOfDay(new Date());
+      
+      // Find plants that need watering (overdue or due today)
+      const plantsNeedingWater = userPlants.filter((plant) => {
+        const lastWatered = startOfDay(new Date(plant.last_watered_date));
+        const nextWateringDate = addDays(lastWatered, plant.water_frequency_days);
+        return nextWateringDate <= today;
+      });
+      
+      // Postpone by setting last_watered_date to yesterday
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      
+      await Promise.all(
+        plantsNeedingWater.map((plant) =>
+          storage.updatePlant(plant.id, {
+            last_watered_date: yesterday.toISOString(),
+          })
+        )
+      );
+      
+      res.json({ success: true, count: plantsNeedingWater.length });
+    } catch (error: any) {
+      console.error("Error postponing all plants:", error);
       res.status(400).json({ error: error.message });
     }
   });

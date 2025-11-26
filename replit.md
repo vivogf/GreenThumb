@@ -83,6 +83,7 @@ All protected routes use a `ProtectedRoute` wrapper component that enforces auth
 - `POST /api/auth/login` - Authenticate user, create session
 - `POST /api/auth/logout` - Destroy session
 - `GET /api/auth/me` - Get current authenticated user
+- `PATCH /api/auth/update-notification-time` - Update user's notification time preference (HH:MM format)
 
 **Authorization Strategy:**
 - Server-side session validation on every protected request
@@ -106,6 +107,7 @@ All protected routes use a `ProtectedRoute` wrapper component that enforces auth
   email: text (unique, not null)
   password: text (bcrypt hash, not null)
   name: text (optional)
+  notification_time: text (optional, HH:MM format, default "09:00")
   created_at: timestamp (default now)
 }
 ```

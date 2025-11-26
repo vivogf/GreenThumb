@@ -4,6 +4,7 @@ interface AuthUser {
   id: number;
   email: string;
   name: string | null;
+  notification_time?: string;
   created_at: string;
 }
 
@@ -13,6 +14,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name?: string) => Promise<void>;
   signOut: () => Promise<void>;
+  updateUser: (userData: Partial<AuthUser>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -88,12 +90,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   };
 
+  const updateUser = (userData: Partial<AuthUser>) => {
+    setUser((prevUser) => prevUser ? { ...prevUser, ...userData } : null);
+  };
+
   const value = {
     user,
     loading,
     signIn,
     register,
     signOut,
+    updateUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

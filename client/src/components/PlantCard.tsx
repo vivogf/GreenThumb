@@ -14,7 +14,7 @@ interface PlantCardProps {
   plant: Plant;
   onWater: (plantId: string) => void;
   isWatering: boolean;
-  onClick: () => void;
+  onClick: (rect: DOMRect) => void;
   layout?: LayoutMode;
 }
 
@@ -27,18 +27,19 @@ interface WaterButtonProps {
 }
 
 function WaterButton({ onWater, isWatering, needsWater, fullWidth, compact }: WaterButtonProps) {
-  const [hearts, setHearts] = useState<{ id: number; x: number; y: number }[]>([]);
+  const [hearts, setHearts] = useState<{ id: number; x: number; initialVelocity: number; rotation: number }[]>([]);
   const [heartIdCounter, setHeartIdCounter] = useState(0);
 
   const handleWater = (e: React.MouseEvent) => {
     e.stopPropagation();
     
-    // Create 3-5 hearts
-    const heartCount = 3 + Math.floor(Math.random() * 3);
+    // Create 4-6 hearts with different initial velocities
+    const heartCount = 4 + Math.floor(Math.random() * 3);
     const newHearts = Array.from({ length: heartCount }, (_, i) => ({
       id: heartIdCounter + i,
-      x: Math.random() * 40 - 20, // -20 to 20
-      y: 0,
+      x: Math.random() * 50 - 25, // Horizontal spread: -25 to 25
+      initialVelocity: 100 + Math.random() * 80, // How high they jump: 100-180px
+      rotation: Math.random() * 360,
     }));
     
     setHearts(prev => [...prev, ...newHearts]);
@@ -47,7 +48,7 @@ function WaterButton({ onWater, isWatering, needsWater, fullWidth, compact }: Wa
     // Remove hearts after animation
     setTimeout(() => {
       setHearts(prev => prev.filter(h => !newHearts.find(nh => nh.id === h.id)));
-    }, 1000);
+    }, 1400);
     
     onWater();
   };
@@ -68,20 +69,26 @@ function WaterButton({ onWater, isWatering, needsWater, fullWidth, compact }: Wa
         {hearts.map(heart => (
           <motion.div
             key={heart.id}
-            initial={{ opacity: 1, y: 0, x: heart.x, scale: 0 }}
+            initial={{ opacity: 1, y: 0, x: heart.x, scale: 0, rotate: 0 }}
             animate={{ 
-              opacity: 0, 
-              y: -60, 
-              x: heart.x + (Math.random() * 30 - 15),
-              scale: [0, 1.2, 1],
-              rotate: Math.random() * 360
+              opacity: [1, 1, 1, 1, 0.8, 0],
+              // Parabolic motion: launch up, pause at apex, then gravity fall
+              y: [0, -heart.initialVelocity * 0.6, -heart.initialVelocity, -heart.initialVelocity, -heart.initialVelocity + 40, 50],
+              // Horizontal: moves out, pauses at apex (50%), then drifts slightly more
+              x: [heart.x, heart.x * 1.3, heart.x * 1.5, heart.x * 1.5, heart.x * 1.6, heart.x * 1.7],
+              scale: [0, 1.2, 1.1, 1.1, 0.9, 0.6],
+              rotate: [0, heart.rotation * 0.3, heart.rotation * 0.5, heart.rotation * 0.5, heart.rotation * 0.8, heart.rotation]
             }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.8, ease: "easeOut" }}
+            transition={{ 
+              duration: 1.4,
+              times: [0, 0.25, 0.45, 0.55, 0.8, 1], // Apex pause at 45-55%
+              ease: "easeOut",
+            }}
             className="absolute top-0 left-1/2 pointer-events-none"
             style={{ marginLeft: '-12px' }}
           >
-            <Heart className="w-6 h-6 fill-green-500 text-green-500" />
+            <Heart className="w-6 h-6 fill-green-500 text-green-500 drop-shadow-sm" />
           </motion.div>
         ))}
       </AnimatePresence>
@@ -115,9 +122,14 @@ export function PlantCard({ plant, onWater, isWatering, onClick, layout = 'card'
 
   const status = getWateringStatus();
 
+  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    onClick(rect);
+  };
+
   if (layout === 'compact') {
     return (
-      <Card className="overflow-hidden hover-elevate cursor-pointer transition-all" onClick={onClick}>
+      <Card className="overflow-hidden hover-elevate cursor-pointer transition-all" onClick={handleClick}>
         <div className="flex items-center gap-3 p-3">
           <div className="relative w-14 h-14 flex-shrink-0 rounded-md overflow-hidden bg-muted">
             <img
@@ -154,7 +166,7 @@ export function PlantCard({ plant, onWater, isWatering, onClick, layout = 'card'
   }
 
   return (
-    <Card className="overflow-hidden hover-elevate cursor-pointer transition-all" onClick={onClick}>
+    <Card className="overflow-hidden hover-elevate cursor-pointer transition-all" onClick={handleClick}>
       <div className="relative aspect-video overflow-hidden bg-muted">
         <img
           src={plant.photo_url}

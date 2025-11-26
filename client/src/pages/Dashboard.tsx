@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { PlantCard, PlantCardSkeleton, type LayoutMode } from '@/components/PlantCard';
+import { PlantModal } from '@/components/PlantModal';
 import type { Plant } from '@shared/schema';
 import { addDays, startOfDay } from 'date-fns';
 import { queryClient, apiRequest } from '@/lib/queryClient';
@@ -19,6 +20,8 @@ export default function Dashboard() {
   const [wateringPlantId, setWateringPlantId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('watering');
+  const [selectedPlantId, setSelectedPlantId] = useState<string | null>(null);
+  const [originRect, setOriginRect] = useState<DOMRect | null>(null);
   const [layout, setLayout] = useState<LayoutMode>(() => {
     if (typeof window !== 'undefined') {
       return (localStorage.getItem('plantLayoutMode') as LayoutMode) || 'card';
@@ -32,6 +35,16 @@ export default function Dashboard() {
 
   const toggleLayout = () => {
     setLayout(prev => prev === 'card' ? 'compact' : 'card');
+  };
+
+  const handlePlantClick = (plant: Plant, rect: DOMRect) => {
+    setSelectedPlantId(plant.id);
+    setOriginRect(rect);
+  };
+
+  const handleCloseModal = () => {
+    setSelectedPlantId(null);
+    setOriginRect(null);
   };
 
   const { data: plants, isLoading } = useQuery<Plant[]>({
@@ -281,7 +294,7 @@ export default function Dashboard() {
                 plant={plant}
                 onWater={handleWater}
                 isWatering={wateringPlantId === plant.id}
-                onClick={() => setLocation(`/plant/${plant.id}`)}
+                onClick={(rect) => handlePlantClick(plant, rect)}
                 layout={layout}
               />
             ))}
@@ -302,13 +315,20 @@ export default function Dashboard() {
                 plant={plant}
                 onWater={handleWater}
                 isWatering={wateringPlantId === plant.id}
-                onClick={() => setLocation(`/plant/${plant.id}`)}
+                onClick={(rect) => handlePlantClick(plant, rect)}
                 layout={layout}
               />
             ))}
           </div>
         </div>
       )}
+
+      <PlantModal
+        plantId={selectedPlantId}
+        isOpen={!!selectedPlantId}
+        onClose={handleCloseModal}
+        originRect={originRect}
+      />
     </div>
   );
 }

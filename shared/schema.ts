@@ -1,6 +1,33 @@
 import { z } from "zod";
-import { pgTable, text, integer, timestamp, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, uuid, serial } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
+
+// Users table for email authentication
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  email: text("email").notNull().unique(),
+  password: text("password").notNull(),
+  name: text("name"),
+  created_at: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type User = typeof users.$inferSelect;
+export const insertUserSchema = createInsertSchema(users)
+  .omit({ id: true, created_at: true });
+export type InsertUser = z.infer<typeof insertUserSchema>;
+
+// Login schema for validation
+export const loginSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+});
+
+// Register schema
+export const registerSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  name: z.string().optional(),
+});
 
 export const plants = pgTable("plants", {
   id: uuid("id").primaryKey().defaultRandom(),

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useLocation, useParams } from 'wouter';
 import type { Plant } from '@shared/schema';
@@ -5,9 +6,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { queryClient, apiRequest } from '@/lib/queryClient';
-import { ArrowLeft, MapPin, Droplets, Calendar, Trash2, Sprout, Shovel, Scissors } from 'lucide-react';
+import { ArrowLeft, MapPin, Droplets, Calendar, Trash2, Sprout, Shovel, Scissors, Settings, X, Check } from 'lucide-react';
 import { format, addDays, addMonths, formatDistanceToNow } from 'date-fns';
 import {
   AlertDialog,
@@ -20,11 +24,28 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 
 export default function PlantDetails() {
   const { id } = useParams();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const [isEditingSettings, setIsEditingSettings] = useState(false);
+  const [editNotes, setEditNotes] = useState<string | null>(null);
+  
+  // Edit form state
+  const [waterFrequency, setWaterFrequency] = useState<number>(7);
+  const [fertilizeFrequency, setFertilizeFrequency] = useState<number | null>(null);
+  const [repotFrequency, setRepotFrequency] = useState<number | null>(null);
+  const [pruneFrequency, setPruneFrequency] = useState<number | null>(null);
 
   const { data: plant, isLoading } = useQuery<Plant>({
     queryKey: ['/api/plants', id],
@@ -153,6 +174,76 @@ export default function PlantDetails() {
     },
   });
 
+  const updateSettingsMutation = useMutation({
+    mutationFn: async (data: {
+      water_frequency_days?: number;
+      fertilize_frequency_days?: number | null;
+      repot_frequency_months?: number | null;
+      prune_frequency_months?: number | null;
+    }) => {
+      const res = await apiRequest('PATCH', `/api/plants/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: 'Settings updated!',
+        description: 'Care schedule updated successfully',
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/plants', id] });
+      queryClient.invalidateQueries({ queryKey: ['/api/plants'] });
+      setIsEditingSettings(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const updateNotesMutation = useMutation({
+    mutationFn: async (notes: string) => {
+      const res = await apiRequest('PATCH', `/api/plants/${id}`, { notes });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: 'Notes updated!',
+        description: 'Plant notes saved successfully',
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/plants', id] });
+      queryClient.invalidateQueries({ queryKey: ['/api/plants'] });
+      setEditNotes(null);
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const openSettingsDialog = () => {
+    if (plant) {
+      setWaterFrequency(plant.water_frequency_days);
+      setFertilizeFrequency(plant.fertilize_frequency_days || null);
+      setRepotFrequency(plant.repot_frequency_months || null);
+      setPruneFrequency(plant.prune_frequency_months || null);
+      setIsEditingSettings(true);
+    }
+  };
+
+  const handleSaveSettings = () => {
+    updateSettingsMutation.mutate({
+      water_frequency_days: waterFrequency,
+      fertilize_frequency_days: fertilizeFrequency,
+      repot_frequency_months: repotFrequency,
+      prune_frequency_months: pruneFrequency,
+    });
+  };
+
   if (isLoading) {
     return (
       <div className="p-4 pb-24 max-w-2xl mx-auto space-y-4">
@@ -222,6 +313,16 @@ export default function PlantDetails() {
             <Badge variant="outline">
               Every {plant.water_frequency_days} {plant.water_frequency_days === 1 ? 'day' : 'days'}
             </Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={openSettingsDialog}
+              className="ml-auto"
+              data-testid="button-edit-settings"
+            >
+              <Settings className="w-4 h-4 mr-1" />
+              Settings
+            </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -338,14 +439,56 @@ export default function PlantDetails() {
             </div>
           )}
 
-          {plant.notes && (
-            <div className="space-y-2">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
               <h3 className="font-medium">Notes</h3>
+              {editNotes === null ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setEditNotes(plant.notes || '')}
+                  data-testid="button-edit-notes"
+                >
+                  {plant.notes ? 'Edit' : 'Add Notes'}
+                </Button>
+              ) : (
+                <div className="flex gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEditNotes(null)}
+                    data-testid="button-cancel-notes"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => updateNotesMutation.mutate(editNotes)}
+                    disabled={updateNotesMutation.isPending}
+                    data-testid="button-save-notes"
+                  >
+                    <Check className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
+            {editNotes !== null ? (
+              <Textarea
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+                placeholder="Add notes about this plant..."
+                className="min-h-[100px]"
+                data-testid="input-notes"
+              />
+            ) : plant.notes ? (
               <p className="text-sm text-muted-foreground whitespace-pre-wrap" data-testid="text-notes">
                 {plant.notes}
               </p>
-            </div>
-          )}
+            ) : (
+              <p className="text-sm text-muted-foreground italic">No notes yet</p>
+            )}
+          </div>
 
           <div className="flex gap-3">
             <Button
@@ -385,6 +528,94 @@ export default function PlantDetails() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={isEditingSettings} onOpenChange={setIsEditingSettings}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Care Settings</DialogTitle>
+            <DialogDescription>
+              Adjust the care schedule for {plant.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="water-frequency" className="flex items-center gap-2">
+                <Droplets className="w-4 h-4 text-primary" />
+                Watering Frequency (days)
+              </Label>
+              <Input
+                id="water-frequency"
+                type="number"
+                min="1"
+                max="365"
+                value={waterFrequency}
+                onChange={(e) => setWaterFrequency(parseInt(e.target.value) || 7)}
+                data-testid="input-water-frequency"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="fertilize-frequency" className="flex items-center gap-2">
+                <Sprout className="w-4 h-4 text-green-600" />
+                Fertilizing Frequency (days)
+              </Label>
+              <Input
+                id="fertilize-frequency"
+                type="number"
+                min="0"
+                max="365"
+                value={fertilizeFrequency || ''}
+                onChange={(e) => setFertilizeFrequency(e.target.value ? parseInt(e.target.value) : null)}
+                placeholder="Leave empty to disable"
+                data-testid="input-fertilize-frequency"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="repot-frequency" className="flex items-center gap-2">
+                <Shovel className="w-4 h-4 text-amber-600" />
+                Repotting Frequency (months)
+              </Label>
+              <Input
+                id="repot-frequency"
+                type="number"
+                min="0"
+                max="60"
+                value={repotFrequency || ''}
+                onChange={(e) => setRepotFrequency(e.target.value ? parseInt(e.target.value) : null)}
+                placeholder="Leave empty to disable"
+                data-testid="input-repot-frequency"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="prune-frequency" className="flex items-center gap-2">
+                <Scissors className="w-4 h-4 text-purple-600" />
+                Pruning Frequency (months)
+              </Label>
+              <Input
+                id="prune-frequency"
+                type="number"
+                min="0"
+                max="60"
+                value={pruneFrequency || ''}
+                onChange={(e) => setPruneFrequency(e.target.value ? parseInt(e.target.value) : null)}
+                placeholder="Leave empty to disable"
+                data-testid="input-prune-frequency"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditingSettings(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSaveSettings}
+              disabled={updateSettingsMutation.isPending}
+              data-testid="button-save-settings"
+            >
+              {updateSettingsMutation.isPending ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

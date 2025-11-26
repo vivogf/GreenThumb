@@ -14,7 +14,7 @@ interface PlantCardProps {
   plant: Plant;
   onWater: (plantId: string) => void;
   isWatering: boolean;
-  onClick: (rect: DOMRect) => void;
+  onClick: () => void;
   layout?: LayoutMode;
 }
 
@@ -33,13 +33,13 @@ function WaterButton({ onWater, isWatering, needsWater, fullWidth, compact }: Wa
   const handleWater = (e: React.MouseEvent) => {
     e.stopPropagation();
     
-    // Create 4-6 hearts with different initial velocities
-    const heartCount = 4 + Math.floor(Math.random() * 3);
+    // Create 3-5 hearts with gentle velocities
+    const heartCount = 3 + Math.floor(Math.random() * 3);
     const newHearts = Array.from({ length: heartCount }, (_, i) => ({
       id: heartIdCounter + i,
-      x: Math.random() * 50 - 25, // Horizontal spread: -25 to 25
-      initialVelocity: 100 + Math.random() * 80, // How high they jump: 100-180px
-      rotation: Math.random() * 360,
+      x: Math.random() * 30 - 15, // Horizontal spread: -15 to 15
+      initialVelocity: 15 + Math.random() * 10, // Gentle rise: 15-25px (half button height)
+      rotation: Math.random() * 40 - 20, // Slight rotation: -20 to 20 degrees
     }));
     
     setHearts(prev => [...prev, ...newHearts]);
@@ -48,7 +48,7 @@ function WaterButton({ onWater, isWatering, needsWater, fullWidth, compact }: Wa
     // Remove hearts after animation
     setTimeout(() => {
       setHearts(prev => prev.filter(h => !newHearts.find(nh => nh.id === h.id)));
-    }, 1400);
+    }, 1800);
     
     onWater();
   };
@@ -69,26 +69,25 @@ function WaterButton({ onWater, isWatering, needsWater, fullWidth, compact }: Wa
         {hearts.map(heart => (
           <motion.div
             key={heart.id}
-            initial={{ opacity: 1, y: 0, x: heart.x, scale: 0, rotate: 0 }}
+            initial={{ opacity: 1, y: 0, x: heart.x, scale: 0.5, rotate: 0 }}
             animate={{ 
-              opacity: [1, 1, 1, 1, 0.8, 0],
-              // Parabolic motion: launch up, pause at apex, then gravity fall
-              y: [0, -heart.initialVelocity * 0.6, -heart.initialVelocity, -heart.initialVelocity, -heart.initialVelocity + 40, 50],
-              // Horizontal: moves out, pauses at apex (50%), then drifts slightly more
-              x: [heart.x, heart.x * 1.3, heart.x * 1.5, heart.x * 1.5, heart.x * 1.6, heart.x * 1.7],
-              scale: [0, 1.2, 1.1, 1.1, 0.9, 0.6],
-              rotate: [0, heart.rotation * 0.3, heart.rotation * 0.5, heart.rotation * 0.5, heart.rotation * 0.8, heart.rotation]
+              opacity: [1, 1, 0.9, 0.6, 0],
+              // Slow rise up, then gentle fall down
+              y: [0, -heart.initialVelocity, -heart.initialVelocity - 5, 20, 40],
+              x: [heart.x, heart.x * 1.1, heart.x * 1.2, heart.x * 1.2, heart.x * 1.3],
+              scale: [0.5, 1, 0.95, 0.8, 0.5],
+              rotate: [0, heart.rotation * 0.5, heart.rotation, heart.rotation, heart.rotation]
             }}
             exit={{ opacity: 0 }}
             transition={{ 
-              duration: 1.4,
-              times: [0, 0.25, 0.45, 0.55, 0.8, 1], // Apex pause at 45-55%
-              ease: "easeOut",
+              duration: 1.6,
+              times: [0, 0.35, 0.5, 0.75, 1],
+              ease: "easeInOut",
             }}
             className="absolute top-0 left-1/2 pointer-events-none"
-            style={{ marginLeft: '-12px' }}
+            style={{ marginLeft: '-10px' }}
           >
-            <Heart className="w-6 h-6 fill-green-500 text-green-500 drop-shadow-sm" />
+            <Heart className="w-5 h-5 fill-green-500 text-green-500 drop-shadow-sm" />
           </motion.div>
         ))}
       </AnimatePresence>
@@ -122,9 +121,8 @@ export function PlantCard({ plant, onWater, isWatering, onClick, layout = 'card'
 
   const status = getWateringStatus();
 
-  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    onClick(rect);
+  const handleClick = () => {
+    onClick();
   };
 
   if (layout === 'compact') {

@@ -1,18 +1,32 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
-import { PlantCard, PlantCardSkeleton } from '@/components/PlantCard';
+import { PlantCard, PlantCardSkeleton, type LayoutMode } from '@/components/PlantCard';
 import type { Plant } from '@shared/schema';
-import { addDays, isPast, isToday } from 'date-fns';
+import { addDays, startOfDay } from 'date-fns';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
-import { Sprout } from 'lucide-react';
+import { Sprout, LayoutGrid, LayoutList } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [wateringPlantId, setWateringPlantId] = useState<string | null>(null);
+  const [layout, setLayout] = useState<LayoutMode>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('plantLayoutMode') as LayoutMode) || 'card';
+    }
+    return 'card';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('plantLayoutMode', layout);
+  }, [layout]);
+
+  const toggleLayout = () => {
+    setLayout(prev => prev === 'card' ? 'compact' : 'card');
+  };
 
   const { data: plants, isLoading } = useQuery<Plant[]>({
     queryKey: ['/api/plants'],
@@ -65,22 +79,26 @@ export default function Dashboard() {
     waterPlantMutation.mutate(plantId);
   };
 
+  const today = startOfDay(new Date());
+  
   const sortedPlants = plants
     ? [...plants].sort((a, b) => {
-        const aNext = addDays(new Date(a.last_watered_date), a.water_frequency_days);
-        const bNext = addDays(new Date(b.last_watered_date), b.water_frequency_days);
+        const aNext = addDays(startOfDay(new Date(a.last_watered_date)), a.water_frequency_days);
+        const bNext = addDays(startOfDay(new Date(b.last_watered_date)), b.water_frequency_days);
         return aNext.getTime() - bNext.getTime();
       })
     : [];
 
   const needsWater = sortedPlants.filter((plant) => {
-    const nextWateringDate = addDays(new Date(plant.last_watered_date), plant.water_frequency_days);
-    return isPast(nextWateringDate) || isToday(nextWateringDate);
+    const lastWatered = startOfDay(new Date(plant.last_watered_date));
+    const nextWateringDate = addDays(lastWatered, plant.water_frequency_days);
+    return nextWateringDate <= today;
   });
 
   const allGood = sortedPlants.filter((plant) => {
-    const nextWateringDate = addDays(new Date(plant.last_watered_date), plant.water_frequency_days);
-    return !isPast(nextWateringDate) && !isToday(nextWateringDate);
+    const lastWatered = startOfDay(new Date(plant.last_watered_date));
+    const nextWateringDate = addDays(lastWatered, plant.water_frequency_days);
+    return nextWateringDate > today;
   });
 
   if (isLoading) {
@@ -117,13 +135,29 @@ export default function Dashboard() {
 
   return (
     <div className="p-4 space-y-6 pb-24">
+      <div className="flex justify-end">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={toggleLayout}
+          data-testid="button-toggle-layout"
+          title={layout === 'card' ? 'Switch to compact view' : 'Switch to card view'}
+        >
+          {layout === 'card' ? (
+            <LayoutList className="h-5 w-5" />
+          ) : (
+            <LayoutGrid className="h-5 w-5" />
+          )}
+        </Button>
+      </div>
+
       {needsWater.length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-destructive animate-pulse"></div>
             <h2 className="text-xl font-medium text-foreground">Needs Water</h2>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="section-needs-water">
+          <div className={layout === 'compact' ? 'space-y-2' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'} data-testid="section-needs-water">
             {needsWater.map((plant) => (
               <PlantCard
                 key={plant.id}
@@ -131,6 +165,7 @@ export default function Dashboard() {
                 onWater={handleWater}
                 isWatering={wateringPlantId === plant.id}
                 onClick={() => setLocation(`/plant/${plant.id}`)}
+                layout={layout}
               />
             ))}
           </div>
@@ -143,7 +178,7 @@ export default function Dashboard() {
             <div className="w-2 h-2 rounded-full bg-primary"></div>
             <h2 className="text-xl font-medium text-foreground">All Good</h2>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="section-all-good">
+          <div className={layout === 'compact' ? 'space-y-2' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'} data-testid="section-all-good">
             {allGood.map((plant) => (
               <PlantCard
                 key={plant.id}
@@ -151,6 +186,7 @@ export default function Dashboard() {
                 onWater={handleWater}
                 isWatering={wateringPlantId === plant.id}
                 onClick={() => setLocation(`/plant/${plant.id}`)}
+                layout={layout}
               />
             ))}
           </div>

@@ -15,9 +15,18 @@ export const plants = pgTable("plants", {
 });
 
 export type Plant = typeof plants.$inferSelect;
+
+// Schema for frontend form (without user_id - added by backend)
 export const insertPlantSchema = createInsertSchema(plants)
-  .omit({ id: true, created_at: true })
+  .omit({ id: true, created_at: true, user_id: true })
   .extend({
     last_watered_date: z.string(),
+    notes: z.string().optional().default(""),
   });
+
 export type InsertPlant = z.infer<typeof insertPlantSchema>;
+
+// Full schema for backend (with user_id)
+export const insertPlantWithUserSchema = insertPlantSchema.extend({
+  user_id: z.string(),
+});

@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { plants, users, type Plant, type InsertPlant, type User, type InsertUser } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { plants, users, pushSubscriptions, type Plant, type InsertPlant, type User, type InsertUser, type PushSubscription, type InsertPushSubscription } from "@shared/schema";
+import { eq, and } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 
 const client = postgres(process.env.DATABASE_URL!);
@@ -20,6 +20,13 @@ export interface IStorage {
   getPlantsByUserId(userId: string): Promise<Plant[]>;
   updatePlant(id: string, plant: Partial<InsertPlant>): Promise<Plant>;
   deletePlant(id: string): Promise<void>;
+  getAllPlants(): Promise<Plant[]>;
+  
+  // Push subscription methods
+  savePushSubscription(subscription: InsertPushSubscription): Promise<PushSubscription>;
+  getPushSubscriptionByUserId(userId: number): Promise<PushSubscription | null>;
+  deletePushSubscription(userId: number): Promise<void>;
+  getAllPushSubscriptions(): Promise<PushSubscription[]>;
 }
 
 export class DbStorage implements IStorage {
@@ -88,6 +95,38 @@ export class DbStorage implements IStorage {
 
   async deletePlant(id: string): Promise<void> {
     await db.delete(plants).where(eq(plants.id, id as any));
+  }
+
+  async getAllPlants(): Promise<Plant[]> {
+    return await db.select().from(plants);
+  }
+
+  // Push subscription methods
+  async savePushSubscription(subscription: InsertPushSubscription): Promise<PushSubscription> {
+    // Delete existing subscription for this user first
+    await db.delete(pushSubscriptions).where(eq(pushSubscriptions.user_id, subscription.user_id));
+    
+    const [result] = await db
+      .insert(pushSubscriptions)
+      .values(subscription)
+      .returning();
+    return result;
+  }
+
+  async getPushSubscriptionByUserId(userId: number): Promise<PushSubscription | null> {
+    const [subscription] = await db
+      .select()
+      .from(pushSubscriptions)
+      .where(eq(pushSubscriptions.user_id, userId));
+    return subscription || null;
+  }
+
+  async deletePushSubscription(userId: number): Promise<void> {
+    await db.delete(pushSubscriptions).where(eq(pushSubscriptions.user_id, userId));
+  }
+
+  async getAllPushSubscriptions(): Promise<PushSubscription[]> {
+    return await db.select().from(pushSubscriptions);
   }
 }
 

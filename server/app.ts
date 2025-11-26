@@ -7,7 +7,7 @@ import express, {
   NextFunction,
 } from "express";
 import session from "express-session";
-import MemoryStore from "memorystore";
+import connectPgSimple from "connect-pg-simple";
 
 import { registerRoutes } from "./routes";
 
@@ -44,7 +44,7 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
 
-const SessionStore = MemoryStore(session);
+const PgStore = connectPgSimple(session);
 app.use(session({
   secret: process.env.SESSION_SECRET || 'greenthumb-secret-key-development',
   resave: false,
@@ -54,8 +54,11 @@ app.use(session({
     httpOnly: true,
     maxAge: 7 * 24 * 60 * 60 * 1000,
   },
-  store: new SessionStore({
-    checkPeriod: 86400000,
+  store: new PgStore({
+    conString: process.env.DATABASE_URL,
+    tableName: 'session',
+    createTableIfMissing: true,
+    pruneSessionInterval: 60 * 15,
   }),
 }));
 

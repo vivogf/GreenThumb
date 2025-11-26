@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Plant } from '@shared/schema';
-import { formatDistanceToNow, addDays, isPast, isToday } from 'date-fns';
+import { formatDistanceToNow, addDays, isPast, isToday, startOfDay } from 'date-fns';
 import { MapPin, Droplets } from 'lucide-react';
 
 export type LayoutMode = 'card' | 'compact';
@@ -17,20 +17,22 @@ interface PlantCardProps {
 }
 
 export function PlantCard({ plant, onWater, isWatering, onClick, layout = 'card' }: PlantCardProps) {
-  const nextWateringDate = addDays(new Date(plant.last_watered_date), plant.water_frequency_days);
-  const isOverdue = isPast(nextWateringDate) && !isToday(nextWateringDate);
-  const isDueToday = isToday(nextWateringDate);
+  const lastWateredDate = startOfDay(new Date(plant.last_watered_date));
+  const nextWateringDate = addDays(lastWateredDate, plant.water_frequency_days);
+  const today = startOfDay(new Date());
+  const isOverdue = nextWateringDate < today;
+  const isDueToday = nextWateringDate.getTime() === today.getTime();
   const needsWater = isOverdue || isDueToday;
 
   const getWateringStatus = () => {
     if (isOverdue) {
-      const daysOverdue = Math.floor((Date.now() - nextWateringDate.getTime()) / (1000 * 60 * 60 * 24));
+      const daysOverdue = Math.floor((today.getTime() - nextWateringDate.getTime()) / (1000 * 60 * 60 * 24));
       return { text: `Overdue by ${daysOverdue} ${daysOverdue === 1 ? 'day' : 'days'}`, shortText: `-${daysOverdue}d`, variant: 'destructive' as const };
     }
     if (isDueToday) {
       return { text: 'Due today', shortText: 'Today', variant: 'default' as const };
     }
-    const daysUntil = Math.ceil((nextWateringDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    const daysUntil = Math.ceil((nextWateringDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
     return { 
       text: `Next watering in ${formatDistanceToNow(nextWateringDate)}`,
       shortText: `${daysUntil}d`,

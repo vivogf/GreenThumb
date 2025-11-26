@@ -57,3 +57,18 @@ export type InsertPlant = z.infer<typeof insertPlantSchema>;
 export const insertPlantWithUserSchema = insertPlantSchema.extend({
   user_id: z.string(),
 });
+
+// Push subscriptions table for web push notifications
+export const pushSubscriptions = pgTable("push_subscriptions", {
+  id: serial("id").primaryKey(),
+  user_id: integer("user_id").notNull(),
+  endpoint: text("endpoint").notNull(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  created_at: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type PushSubscription = typeof pushSubscriptions.$inferSelect;
+export const insertPushSubscriptionSchema = createInsertSchema(pushSubscriptions)
+  .omit({ id: true, created_at: true });
+export type InsertPushSubscription = z.infer<typeof insertPushSubscriptionSchema>;

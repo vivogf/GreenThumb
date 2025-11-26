@@ -4,7 +4,9 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Plant } from '@shared/schema';
 import { formatDistanceToNow, addDays, isPast, isToday, startOfDay } from 'date-fns';
-import { MapPin, Droplets } from 'lucide-react';
+import { MapPin, Droplets, Heart } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useState } from 'react';
 
 export type LayoutMode = 'card' | 'compact';
 
@@ -14,6 +16,77 @@ interface PlantCardProps {
   isWatering: boolean;
   onClick: () => void;
   layout?: LayoutMode;
+}
+
+interface WaterButtonProps {
+  onWater: () => void;
+  isWatering: boolean;
+  needsWater: boolean;
+  fullWidth?: boolean;
+  compact?: boolean;
+}
+
+function WaterButton({ onWater, isWatering, needsWater, fullWidth, compact }: WaterButtonProps) {
+  const [hearts, setHearts] = useState<{ id: number; x: number; y: number }[]>([]);
+  const [heartIdCounter, setHeartIdCounter] = useState(0);
+
+  const handleWater = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    // Create 3-5 hearts
+    const heartCount = 3 + Math.floor(Math.random() * 3);
+    const newHearts = Array.from({ length: heartCount }, (_, i) => ({
+      id: heartIdCounter + i,
+      x: Math.random() * 40 - 20, // -20 to 20
+      y: 0,
+    }));
+    
+    setHearts(prev => [...prev, ...newHearts]);
+    setHeartIdCounter(prev => prev + heartCount);
+    
+    // Remove hearts after animation
+    setTimeout(() => {
+      setHearts(prev => prev.filter(h => !newHearts.find(nh => nh.id === h.id)));
+    }, 1000);
+    
+    onWater();
+  };
+
+  return (
+    <div className="relative inline-block">
+      <Button
+        onClick={handleWater}
+        disabled={isWatering}
+        className={fullWidth ? 'w-full' : ''}
+        size={compact ? 'sm' : 'default'}
+        variant={needsWater ? 'default' : 'secondary'}
+        data-testid="button-water"
+      >
+        {isWatering ? (compact ? '...' : 'Watering...') : (compact ? 'Water' : 'Water Plant')}
+      </Button>
+      <AnimatePresence>
+        {hearts.map(heart => (
+          <motion.div
+            key={heart.id}
+            initial={{ opacity: 1, y: 0, x: heart.x, scale: 0 }}
+            animate={{ 
+              opacity: 0, 
+              y: -60, 
+              x: heart.x + (Math.random() * 30 - 15),
+              scale: [0, 1.2, 1],
+              rotate: Math.random() * 360
+            }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.8, ease: "easeOut" }}
+            className="absolute top-0 left-1/2 pointer-events-none"
+            style={{ marginLeft: '-12px' }}
+          >
+            <Heart className="w-6 h-6 fill-green-500 text-green-500" />
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
+  );
 }
 
 export function PlantCard({ plant, onWater, isWatering, onClick, layout = 'card' }: PlantCardProps) {
@@ -69,18 +142,12 @@ export function PlantCard({ plant, onWater, isWatering, onClick, layout = 'card'
             <Droplets className="w-3 h-3 mr-1" />
             {status.shortText}
           </Badge>
-          <Button
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              onWater(plant.id);
-            }}
-            disabled={isWatering}
-            variant={needsWater ? 'default' : 'secondary'}
-            data-testid={`button-water-${plant.id}`}
-          >
-            {isWatering ? '...' : 'Water'}
-          </Button>
+          <WaterButton
+            onWater={() => onWater(plant.id)}
+            isWatering={isWatering}
+            needsWater={needsWater}
+            compact
+          />
         </div>
       </Card>
     );
@@ -119,18 +186,12 @@ export function PlantCard({ plant, onWater, isWatering, onClick, layout = 'card'
             {plant.notes}
           </p>
         )}
-        <Button
-          onClick={(e) => {
-            e.stopPropagation();
-            onWater(plant.id);
-          }}
-          disabled={isWatering}
-          className="w-full"
-          variant={needsWater ? 'default' : 'secondary'}
-          data-testid={`button-water-${plant.id}`}
-        >
-          {isWatering ? 'Watering...' : 'Water Plant'}
-        </Button>
+        <WaterButton
+          onWater={() => onWater(plant.id)}
+          isWatering={isWatering}
+          needsWater={needsWater}
+          fullWidth
+        />
       </CardContent>
     </Card>
   );

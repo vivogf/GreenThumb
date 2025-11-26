@@ -7,8 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { queryClient, apiRequest } from '@/lib/queryClient';
-import { ArrowLeft, MapPin, Droplets, Calendar, Trash2 } from 'lucide-react';
-import { format, addDays, formatDistanceToNow } from 'date-fns';
+import { ArrowLeft, MapPin, Droplets, Calendar, Trash2, Sprout, Shovel, Scissors } from 'lucide-react';
+import { format, addDays, addMonths, formatDistanceToNow } from 'date-fns';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -81,6 +81,78 @@ export default function PlantDetails() {
     },
   });
 
+  const fertilizePlantMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest('PATCH', `/api/plants/${id}`, {
+        last_fertilized_date: new Date().toISOString(),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: 'Plant fertilized!',
+        description: 'Fertilizing date updated successfully',
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/plants', id] });
+      queryClient.invalidateQueries({ queryKey: ['/api/plants'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const repotPlantMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest('PATCH', `/api/plants/${id}`, {
+        last_repotted_date: new Date().toISOString(),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: 'Plant repotted!',
+        description: 'Repotting date updated successfully',
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/plants', id] });
+      queryClient.invalidateQueries({ queryKey: ['/api/plants'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const prunePlantMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest('PATCH', `/api/plants/${id}`, {
+        last_pruned_date: new Date().toISOString(),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: 'Plant pruned!',
+        description: 'Pruning date updated successfully',
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/plants', id] });
+      queryClient.invalidateQueries({ queryKey: ['/api/plants'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
   if (isLoading) {
     return (
       <div className="p-4 pb-24 max-w-2xl mx-auto space-y-4">
@@ -104,6 +176,19 @@ export default function PlantDetails() {
   }
 
   const nextWateringDate = addDays(new Date(plant.last_watered_date), plant.water_frequency_days);
+  
+  // Calculate next care dates
+  const nextFertilizeDate = plant.fertilize_frequency_days && plant.last_fertilized_date
+    ? addDays(new Date(plant.last_fertilized_date), plant.fertilize_frequency_days)
+    : null;
+  
+  const nextRepotDate = plant.repot_frequency_months && plant.last_repotted_date
+    ? addMonths(new Date(plant.last_repotted_date), plant.repot_frequency_months)
+    : null;
+  
+  const nextPruneDate = plant.prune_frequency_months && plant.last_pruned_date
+    ? addMonths(new Date(plant.last_pruned_date), plant.prune_frequency_months)
+    : null;
 
   return (
     <div className="p-4 pb-24 max-w-2xl mx-auto space-y-4">
@@ -167,6 +252,91 @@ export default function PlantDetails() {
               </div>
             </div>
           </div>
+
+          {/* Advanced Care Schedule */}
+          {(nextFertilizeDate || nextRepotDate || nextPruneDate) && (
+            <div className="space-y-3">
+              <h3 className="font-medium">Advanced Care Schedule</h3>
+              
+              {nextFertilizeDate && (
+                <div className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg">
+                  <Sprout className="w-5 h-5 text-primary mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Fertilizing</p>
+                    <p className="text-sm text-muted-foreground">
+                      Last: {format(new Date(plant.last_fertilized_date!), 'PPP')}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Next: {format(nextFertilizeDate, 'PPP')}
+                      <span className="ml-2">
+                        ({formatDistanceToNow(nextFertilizeDate, { addSuffix: true })})
+                      </span>
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => fertilizePlantMutation.mutate()}
+                    disabled={fertilizePlantMutation.isPending}
+                    data-testid="button-fertilize"
+                  >
+                    {fertilizePlantMutation.isPending ? '...' : 'Fertilize'}
+                  </Button>
+                </div>
+              )}
+
+              {nextRepotDate && (
+                <div className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg">
+                  <Shovel className="w-5 h-5 text-primary mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Repotting</p>
+                    <p className="text-sm text-muted-foreground">
+                      Last: {format(new Date(plant.last_repotted_date!), 'PPP')}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Next: {format(nextRepotDate, 'PPP')}
+                      <span className="ml-2">
+                        ({formatDistanceToNow(nextRepotDate, { addSuffix: true })})
+                      </span>
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => repotPlantMutation.mutate()}
+                    disabled={repotPlantMutation.isPending}
+                    data-testid="button-repot"
+                  >
+                    {repotPlantMutation.isPending ? '...' : 'Repot'}
+                  </Button>
+                </div>
+              )}
+
+              {nextPruneDate && (
+                <div className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg">
+                  <Scissors className="w-5 h-5 text-primary mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Pruning</p>
+                    <p className="text-sm text-muted-foreground">
+                      Last: {format(new Date(plant.last_pruned_date!), 'PPP')}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Next: {format(nextPruneDate, 'PPP')}
+                      <span className="ml-2">
+                        ({formatDistanceToNow(nextPruneDate, { addSuffix: true })})
+                      </span>
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => prunePlantMutation.mutate()}
+                    disabled={prunePlantMutation.isPending}
+                    data-testid="button-prune"
+                  >
+                    {prunePlantMutation.isPending ? '...' : 'Prune'}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
 
           {plant.notes && (
             <div className="space-y-2">

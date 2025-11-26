@@ -214,8 +214,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Check plants and send notifications (can be called by cron or manually)
+  // Check plants and send notifications (protected with API key for cron jobs)
   app.post("/api/push/check-plants", async (req: Request, res) => {
+    // Require either authentication or a secret API key
+    const apiKey = req.headers['x-api-key'];
+    const expectedKey = process.env.PUSH_CHECK_API_KEY || process.env.SESSION_SECRET;
+    
+    if (!req.session?.userId && apiKey !== expectedKey) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
     try {
       const plants = await storage.getAllPlants();
       const subscriptions = await storage.getAllPushSubscriptions();

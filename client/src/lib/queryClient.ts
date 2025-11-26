@@ -7,19 +7,6 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
-function getUserId(): string {
-  const stored = localStorage.getItem("user");
-  if (stored) {
-    try {
-      const user = JSON.parse(stored);
-      return String(user.id);
-    } catch {
-      return "";
-    }
-  }
-  return "";
-}
-
 export async function apiRequest(
   method: string,
   url: string,
@@ -27,10 +14,7 @@ export async function apiRequest(
 ): Promise<Response> {
   const res = await fetch(url, {
     method,
-    headers: {
-      ...(data ? { "Content-Type": "application/json" } : {}),
-      "x-user-id": getUserId(),
-    },
+    headers: data ? { "Content-Type": "application/json" } : {},
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
@@ -46,7 +30,6 @@ export const getQueryFn: <T>(options: {
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
     const res = await fetch(queryKey.join("/") as string, {
-      headers: { "x-user-id": getUserId() },
       credentials: "include",
     });
 

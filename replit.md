@@ -2,7 +2,7 @@
 
 ## Overview
 
-GreenThumb is a mobile-first Progressive Web App (PWA) designed to help users track and manage their plant watering schedules. The application provides a clean, zen-minimalist interface focused on visual plant imagery and intuitive watering reminders. Built with React and TypeScript, it leverages Supabase for authentication and data storage, ensuring secure, user-isolated plant management.
+GreenThumb is a mobile-first Progressive Web App (PWA) designed to help users track and manage their plant watering schedules. The application provides a clean, zen-minimalist interface focused on visual plant imagery and intuitive watering reminders. Built with React and TypeScript, it uses Replit PostgreSQL for data storage and custom email-based authentication with secure server-side sessions.
 
 The app intelligently sorts plants by watering needs, showing overdue and due-today plants first, with optimistic UI updates for immediate user feedback when watering plants.
 
@@ -40,7 +40,7 @@ Preferred communication style: Simple, everyday language.
 - Local component state using React hooks for form handling
 
 **Routing Structure:**
-- `/login` - Authentication page (public)
+- `/login` - Authentication page with email/password (public)
 - `/` - Dashboard with plant list (protected)
 - `/add-plant` - Form to add new plants (protected)
 - `/plant/:id` - Individual plant details (protected)
@@ -58,57 +58,78 @@ All protected routes use a `ProtectedRoute` wrapper component that enforces auth
 
 **API Design:**
 - RESTful API with `/api` prefix for all endpoints
-- Currently using direct Supabase client-side integration (no custom API endpoints)
-- Server routes registered through `registerRoutes` function in `routes.ts`
+- Authentication endpoints: `/api/auth/register`, `/api/auth/login`, `/api/auth/logout`, `/api/auth/me`
+- Plant CRUD endpoints: `/api/plants` (GET, POST), `/api/plants/:id` (PATCH, DELETE)
+- All plant endpoints protected with `requireAuth` middleware
 - Request logging middleware tracking response times and JSON payloads
 
 **Data Storage:**
+- Replit PostgreSQL database
 - Drizzle ORM configured for PostgreSQL dialect
 - Schema definition in `shared/schema.ts` for type-safe data models
 - Database credentials managed via `DATABASE_URL` environment variable
-- Migration files stored in `./migrations` directory
 
 ### Authentication & Authorization
 
-**Authentication Provider:**
-- Supabase Auth for user authentication
-- Email/password authentication flow
-- Session management with automatic token refresh
-- Authentication state managed through React Context
+**Authentication System:**
+- Custom email/password authentication
+- Passwords hashed with bcryptjs (salt rounds: 10)
+- Server-side sessions using express-session with memorystore
+- HttpOnly cookies for secure session management
+- 7-day session expiry
+
+**API Endpoints:**
+- `POST /api/auth/register` - Create new user account
+- `POST /api/auth/login` - Authenticate user, create session
+- `POST /api/auth/logout` - Destroy session
+- `GET /api/auth/me` - Get current authenticated user
 
 **Authorization Strategy:**
-- Row Level Security (RLS) enforced at the database level in Supabase
-- Client trusts backend RLS policies - no manual user_id filtering in queries
-- All plant queries automatically filtered by Supabase to return only user's data
+- Server-side session validation on every protected request
+- `requireAuth` middleware protects plant endpoints
+- User ID stored in session, not in client-side storage
 - Protected routes redirect unauthenticated users to `/login`
 
 **User Session Flow:**
-1. User credentials validated by Supabase Auth
-2. Session token stored and managed by Supabase client
-3. `AuthContext` monitors session state changes
-4. Protected routes check authentication status before rendering
+1. User submits email/password to register or login
+2. Server validates credentials and creates session
+3. Session ID stored in HttpOnly cookie
+4. `AuthContext` checks `/api/auth/me` on page load
+5. Protected routes check authentication status before rendering
 
 ### Data Schema
+
+**Users Table:**
+```typescript
+{
+  id: serial (primary key, auto-increment)
+  email: text (unique, not null)
+  password: text (bcrypt hash, not null)
+  name: text (optional)
+  created_at: timestamp (default now)
+}
+```
 
 **Plants Table:**
 ```typescript
 {
-  id: string (uuid, primary key)
-  user_id: string (uuid, references auth.users)
-  name: string
-  location: string
-  photo_url: string
-  water_frequency_days: number
-  last_watered_date: string (ISO timestamp)
-  notes: string (optional)
+  id: uuid (primary key, auto-generated)
+  user_id: text (not null, references user id)
+  name: text (not null)
+  location: text (not null)
+  photo_url: text (not null, can be base64 data URI)
+  water_frequency_days: integer (not null)
+  last_watered_date: timestamp (not null)
+  notes: text (optional)
 }
 ```
 
 **Validation:**
+- Zod schema validation for user registration (`registerSchema`)
+- Zod schema validation for login (`loginSchema`)
 - Zod schema validation for plant creation (`insertPlantSchema`)
 - React Hook Form with Zod resolver for client-side form validation
-- Required fields: name, location, photo_url, water_frequency_days
-- Notes field is optional with empty string default
+- Password minimum: 6 characters
 
 **Business Logic:**
 - Next watering date calculated as: `last_watered_date + water_frequency_days`
@@ -117,31 +138,20 @@ All protected routes use a `ProtectedRoute` wrapper component that enforces auth
 
 ## External Dependencies
 
-### Third-Party Services
-
-**Supabase (Primary Backend Service):**
-- **Purpose**: Backend-as-a-Service providing authentication and PostgreSQL database
-- **Integration**: Client-side SDK (`@supabase/supabase-js`)
-- **Configuration**: Requires `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` environment variables
-- **Features Used**:
-  - Auth: Email/password authentication with session management
-  - Database: PostgreSQL with Row Level Security
-  - Real-time: Potential for live updates (infrastructure present but not actively used)
-
 ### Database
 
-**PostgreSQL (via Supabase):**
-- Hosted PostgreSQL instance managed by Supabase
-- Row Level Security (RLS) policies enforce data isolation per user
-- Accessed via Supabase client SDK, not direct connection
-- Drizzle ORM configured but primarily using Supabase client for queries
-
-**Potential PostgreSQL Setup:**
-- Application includes `@neondatabase/serverless` package
-- Drizzle configuration supports direct PostgreSQL connection via `DATABASE_URL`
-- Current implementation relies on Supabase; direct PostgreSQL may be added later
+**Replit PostgreSQL:**
+- Hosted PostgreSQL instance provided by Replit
+- Direct connection via `DATABASE_URL` environment variable
+- Schema managed via Drizzle ORM and `npm run db:push`
+- Storage limit: 10 GiB per database
 
 ### Key NPM Packages
+
+**Authentication:**
+- `express-session` - Server-side session management
+- `memorystore` - Session store for development
+- `bcryptjs` - Password hashing
 
 **UI & Styling:**
 - `@radix-ui/*` - Accessible component primitives (20+ components)
@@ -172,6 +182,15 @@ All protected routes use a `ProtectedRoute` wrapper component that enforces auth
 - **ESBuild**: Production server bundling
 - **PostCSS + Autoprefixer**: CSS processing pipeline
 - **Drizzle Kit**: Database schema management and migrations
+
+### Environment Variables
+
+**Required Secrets:**
+- `DATABASE_URL` - PostgreSQL connection string
+- `SESSION_SECRET` - Secret for signing session cookies
+
+**Database Secrets (auto-provided):**
+- `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`
 
 ### Development-Only Dependencies
 

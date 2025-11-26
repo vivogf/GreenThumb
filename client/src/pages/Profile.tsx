@@ -21,21 +21,13 @@ export default function Profile() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
 
-  const handleSignOut = async () => {
-    try {
-      await signOut();
-      toast({
-        title: 'Signed out',
-        description: 'You have been signed out successfully.',
-      });
-      setLocation('/login');
-    } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.message,
-        variant: 'destructive',
-      });
-    }
+  const handleSignOut = () => {
+    signOut();
+    toast({
+      title: 'Signed out',
+      description: 'You have been signed out successfully.',
+    });
+    setLocation('/login');
   };
 
   return (
@@ -48,7 +40,9 @@ export default function Profile() {
             </div>
           </div>
           <div>
-            <CardTitle className="text-2xl">Profile</CardTitle>
+            <CardTitle className="text-2xl" data-testid="text-user-name">
+              {user?.name || 'My Profile'}
+            </CardTitle>
             <CardDescription className="mt-2" data-testid="text-user-email">
               {user?.email}
             </CardDescription>

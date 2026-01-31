@@ -5,6 +5,7 @@ interface AuthUser {
   email: string;
   name: string | null;
   notification_time?: string;
+  recovery_key?: string;
   created_at: string;
 }
 
@@ -12,9 +13,11 @@ interface AuthContextType {
   user: AuthUser | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  signInWithRecoveryKey: (recoveryKey: string) => Promise<void>;
   register: (email: string, password: string, name?: string) => Promise<void>;
   signOut: () => Promise<void>;
   updateUser: (userData: Partial<AuthUser>) => void;
+  regenerateRecoveryKey: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -51,13 +54,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       body: JSON.stringify({ email, password }),
       credentials: 'include',
     });
-    
+
     const data = await response.json();
-    
+
     if (!response.ok) {
       throw new Error(data.error || 'Login failed');
     }
-    
+
+    setUser(data.user);
+  };
+
+  const signInWithRecoveryKey = async (recoveryKey: string) => {
+    const response = await fetch('/api/auth/login-recovery', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recoveryKey }),
+      credentials: 'include',
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Recovery login failed');
+    }
+
     setUser(data.user);
   };
 
@@ -94,13 +114,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser((prevUser) => prevUser ? { ...prevUser, ...userData } : null);
   };
 
+  const regenerateRecoveryKey = async () => {
+    const response = await fetch('/api/auth/regenerate-recovery-key', {
+      method: 'POST',
+      credentials: 'include',
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to regenerate recovery key');
+    }
+
+    setUser(data.user);
+  };
+
   const value = {
     user,
     loading,
     signIn,
+    signInWithRecoveryKey,
     register,
     signOut,
     updateUser,
+    regenerateRecoveryKey,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

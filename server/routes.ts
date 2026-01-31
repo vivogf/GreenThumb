@@ -80,14 +80,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!req.session?.userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
-    
+
     const user = await storage.getUserById(req.session.userId);
     if (!user) {
       return res.status(401).json({ error: "User not found" });
     }
-    
+
     const { password: _, ...safeUser } = user;
     res.json({ user: safeUser });
+  });
+
+  // Login with recovery key
+  app.post("/api/auth/login-recovery", async (req: Request, res) => {
+    try {
+      const { recoveryKey } = req.body;
+
+      if (!recoveryKey || typeof recoveryKey !== 'string') {
+        return res.status(400).json({ error: "Recovery key is required" });
+      }
+
+      const user = await storage.getUserByRecoveryKey(recoveryKey.trim());
+      if (!user) {
+        return res.status(401).json({ error: "Invalid recovery key" });
+      }
+
+      req.session.userId = user.id;
+
+      const { password: _, ...safeUser } = user;
+      res.json({ user: safeUser });
+    } catch (error: any) {
+      console.error("Recovery login error:", error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Regenerate recovery key
+  app.post("/api/auth/regenerate-recovery-key", requireAuth, async (req: Request, res) => {
+    try {
+      const userId = req.session.userId!;
+
+      const user = await storage.regenerateRecoveryKey(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const { password: _, ...safeUser } = user;
+      res.json({ user: safeUser });
+    } catch (error: any) {
+      console.error("Regenerate recovery key error:", error);
+      res.status(400).json({ error: error.message });
+    }
   });
 
   app.patch("/api/auth/update-notification-time", requireAuth, async (req: Request, res) => {

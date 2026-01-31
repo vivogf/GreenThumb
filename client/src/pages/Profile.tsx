@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { useLocation } from 'wouter';
-import { LogOut, User, Leaf, Bell, BellOff, Clock } from 'lucide-react';
+import { LogOut, User, Leaf, Bell, BellOff, Clock, Key, Copy, RefreshCw } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,7 +34,7 @@ function urlBase64ToUint8Array(base64String: string) {
 }
 
 export default function Profile() {
-  const { user, signOut, updateUser } = useAuth();
+  const { user, signOut, updateUser, regenerateRecoveryKey } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
@@ -42,6 +42,8 @@ export default function Profile() {
   const [isLoading, setIsLoading] = useState(true);
   const [notificationTime, setNotificationTime] = useState(user?.notification_time || '09:00');
   const [isSavingTime, setIsSavingTime] = useState(false);
+  const [showRecoveryKey, setShowRecoveryKey] = useState(false);
+  const [isRegeneratingKey, setIsRegeneratingKey] = useState(false);
 
   useEffect(() => {
     const checkNotificationSupport = async () => {
@@ -214,6 +216,34 @@ export default function Profile() {
     setLocation('/login');
   };
 
+  const handleCopyRecoveryKey = async () => {
+    if (user?.recovery_key) {
+      await navigator.clipboard.writeText(user.recovery_key);
+      toast({
+        title: 'Copied!',
+        description: 'Recovery key copied to clipboard.',
+      });
+    }
+  };
+
+  const handleRegenerateKey = async () => {
+    setIsRegeneratingKey(true);
+    try {
+      await regenerateRecoveryKey();
+      toast({
+        title: 'Key regenerated',
+        description: 'Your new recovery key has been generated. Make sure to save it!',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to regenerate recovery key.',
+        variant: 'destructive',
+      });
+    }
+    setIsRegeneratingKey(false);
+  };
+
   return (
     <div className="p-4 pb-24 max-w-2xl mx-auto space-y-4">
       <Card>
@@ -311,6 +341,53 @@ export default function Profile() {
               )}
             </div>
           )}
+
+          {/* Recovery Key Section */}
+          <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <Key className="w-4 h-4 text-primary" />
+                <Label className="text-sm font-medium">Recovery Key</Label>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowRecoveryKey(!showRecoveryKey)}
+              >
+                {showRecoveryKey ? 'Hide' : 'Show'}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Save this key to recover your account if you lose access.
+            </p>
+            {showRecoveryKey && user?.recovery_key && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 p-2 bg-background rounded text-xs font-mono break-all border">
+                    {user.recovery_key}
+                  </code>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleCopyRecoveryKey}
+                    title="Copy to clipboard"
+                  >
+                    <Copy className="w-4 h-4" />
+                  </Button>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRegenerateKey}
+                  disabled={isRegeneratingKey}
+                  className="w-full"
+                >
+                  <RefreshCw className={`w-4 h-4 mr-2 ${isRegeneratingKey ? 'animate-spin' : ''}`} />
+                  {isRegeneratingKey ? 'Generating...' : 'Generate New Key'}
+                </Button>
+              </div>
+            )}
+          </div>
 
           <AlertDialog>
             <AlertDialogTrigger asChild>

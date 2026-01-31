@@ -9,6 +9,7 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
   name: text("name"),
   notification_time: text("notification_time").default("09:00"),
+  recovery_key: uuid("recovery_key").defaultRandom().notNull().unique(),
   created_at: timestamp("created_at").defaultNow().notNull(),
 });
 

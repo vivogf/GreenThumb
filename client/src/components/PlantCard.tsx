@@ -175,33 +175,27 @@ export function PlantCard({ plant, onWater, isWatering, onClick, layout = 'card'
           }}
         />
       </div>
-      <CardContent className="p-4 space-y-3">
-        <div className="space-y-2">
-          <h3 className="text-lg font-medium text-foreground" data-testid={`text-plant-name-${plant.id}`}>
-            {plant.name}
-          </h3>
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="text-xs">
+      <CardContent className="p-3 space-y-2">
+        <h3 className="text-base font-medium text-foreground truncate" data-testid={`text-plant-name-${plant.id}`}>
+          {plant.name}
+        </h3>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-col gap-1 min-w-0 flex-1">
+            <Badge variant="secondary" className="text-xs w-fit">
               <MapPin className="w-3 h-3 mr-1" />
               {plant.location}
             </Badge>
+            <Badge variant={status.variant} className="text-xs w-fit" data-testid={`text-status-${plant.id}`}>
+              <Droplets className="w-3 h-3 mr-1" />
+              {status.text}
+            </Badge>
           </div>
-          <Badge variant={status.variant} className="text-xs" data-testid={`text-status-${plant.id}`}>
-            <Droplets className="w-3 h-3 mr-1" />
-            {status.text}
-          </Badge>
+          <WaterButton
+            onWater={() => onWater(plant.id)}
+            isWatering={isWatering}
+            needsWater={needsWater}
+          />
         </div>
-        {plant.notes && (
-          <p className="text-sm text-muted-foreground line-clamp-2">
-            {plant.notes}
-          </p>
-        )}
-        <WaterButton
-          onWater={() => onWater(plant.id)}
-          isWatering={isWatering}
-          needsWater={needsWater}
-          fullWidth
-        />
       </CardContent>
     </Card>
   );

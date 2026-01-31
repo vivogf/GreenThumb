@@ -12,9 +12,11 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   getUserByEmail(email: string): Promise<User | null>;
   getUserById(id: number): Promise<User | null>;
+  getUserByRecoveryKey(recoveryKey: string): Promise<User | null>;
   getAllUsers(): Promise<User[]>;
   validatePassword(email: string, password: string): Promise<User | null>;
   updateUserNotificationTime(userId: number, notificationTime: string): Promise<User | null>;
+  regenerateRecoveryKey(userId: number): Promise<User | null>;
   
   // Plant methods
   addPlant(plant: InsertPlant & { user_id: string }): Promise<Plant>;
@@ -73,6 +75,23 @@ export class DbStorage implements IStorage {
     const [result] = await db
       .update(users)
       .set({ notification_time: notificationTime })
+      .where(eq(users.id, userId))
+      .returning();
+    return result || null;
+  }
+
+  async getUserByRecoveryKey(recoveryKey: string): Promise<User | null> {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.recovery_key, recoveryKey));
+    return user || null;
+  }
+
+  async regenerateRecoveryKey(userId: number): Promise<User | null> {
+    const [result] = await db
+      .update(users)
+      .set({ recovery_key: crypto.randomUUID() })
       .where(eq(users.id, userId))
       .returning();
     return result || null;

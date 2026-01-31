@@ -4,3 +4,15 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+
+# Environment variables (CRITICAL - never commit!)
+.env
+.env.local
+.env.production
+
+# Local files
+.local/
+
+# Replit specific
+.replit
+.config/

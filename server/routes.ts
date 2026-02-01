@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertPlantSchema, registerSchema, loginSchema } from "@shared/schema";
+import { insertPlantSchema } from "@shared/schema";
 import webpush from "web-push";
 import { addDays, isToday, isBefore, startOfDay } from "date-fns";
 
@@ -22,47 +22,18 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Auth routes
-  app.post("/api/auth/register", async (req: Request, res) => {
+  // Auth routes - anonymous UUID-based authentication
+  app.post("/api/auth/create-anonymous", async (req: Request, res) => {
     try {
-      const data = registerSchema.parse(req.body);
-      
-      const existingUser = await storage.getUserByEmail(data.email);
-      if (existingUser) {
-        return res.status(400).json({ error: "Email already registered" });
-      }
-      
-      const user = await storage.createUser({
-        email: data.email.toLowerCase(),
-        password: data.password,
-        name: data.name || null,
-      });
-      
-      req.session.userId = user.id;
-      
-      const { password: _, ...safeUser } = user;
-      res.json({ user: safeUser });
-    } catch (error: any) {
-      console.error("Registration error:", error);
-      res.status(400).json({ error: error.message });
-    }
-  });
+      const { name } = req.body;
 
-  app.post("/api/auth/login", async (req: Request, res) => {
-    try {
-      const data = loginSchema.parse(req.body);
-      
-      const user = await storage.validatePassword(data.email, data.password);
-      if (!user) {
-        return res.status(401).json({ error: "Invalid email or password" });
-      }
-      
+      const user = await storage.createAnonymousUser(name);
+
       req.session.userId = user.id;
-      
-      const { password: _, ...safeUser } = user;
-      res.json({ user: safeUser });
+
+      res.json({ user });
     } catch (error: any) {
-      console.error("Login error:", error);
+      console.error("Create anonymous user error:", error);
       res.status(400).json({ error: error.message });
     }
   });
@@ -86,8 +57,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(401).json({ error: "User not found" });
     }
 
-    const { password: _, ...safeUser } = user;
-    res.json({ user: safeUser });
+    res.json({ user });
   });
 
   // Login with recovery key
@@ -106,8 +76,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       req.session.userId = user.id;
 
-      const { password: _, ...safeUser } = user;
-      res.json({ user: safeUser });
+      res.json({ user });
     } catch (error: any) {
       console.error("Recovery login error:", error);
       res.status(400).json({ error: error.message });
@@ -124,8 +93,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "User not found" });
       }
 
-      const { password: _, ...safeUser } = user;
-      res.json({ user: safeUser });
+      res.json({ user });
     } catch (error: any) {
       console.error("Regenerate recovery key error:", error);
       res.status(400).json({ error: error.message });
@@ -136,24 +104,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.session.userId!;
       const { notification_time } = req.body;
-      
+
       if (!notification_time || typeof notification_time !== 'string') {
         return res.status(400).json({ error: "Invalid notification time" });
       }
-      
+
       // Validate time format HH:MM
       const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
       if (!timeRegex.test(notification_time)) {
         return res.status(400).json({ error: "Invalid time format. Use HH:MM (e.g., 09:00)" });
       }
-      
+
       const user = await storage.updateUserNotificationTime(userId, notification_time);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
       }
-      
-      const { password: _, ...safeUser } = user;
-      res.json({ user: safeUser });
+
+      res.json({ user });
     } catch (error: any) {
       console.error("Error updating notification time:", error);
       res.status(400).json({ error: error.message });

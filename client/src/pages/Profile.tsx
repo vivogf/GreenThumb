@@ -257,8 +257,8 @@ export default function Profile() {
             <CardTitle className="text-2xl" data-testid="text-user-name">
               {user?.name || 'My Profile'}
             </CardTitle>
-            <CardDescription className="mt-2" data-testid="text-user-email">
-              {user?.email}
+            <CardDescription className="mt-2">
+              Anonymous account
             </CardDescription>
           </div>
         </CardHeader>

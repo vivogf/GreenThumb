@@ -2,19 +2,17 @@ import { createContext, useContext, useEffect, useState } from 'react';
 
 interface AuthUser {
   id: number;
-  email: string;
   name: string | null;
   notification_time?: string;
-  recovery_key?: string;
+  recovery_key: string;
   created_at: string;
 }
 
 interface AuthContextType {
   user: AuthUser | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
+  createAnonymousAccount: (name?: string) => Promise<AuthUser>;
   signInWithRecoveryKey: (recoveryKey: string) => Promise<void>;
-  register: (email: string, password: string, name?: string) => Promise<void>;
   signOut: () => Promise<void>;
   updateUser: (userData: Partial<AuthUser>) => void;
   regenerateRecoveryKey: () => Promise<void>;
@@ -32,7 +30,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const response = await fetch('/api/auth/me', {
           credentials: 'include',
         });
-        
+
         if (response.ok) {
           const data = await response.json();
           setUser(data.user);
@@ -47,21 +45,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     checkSession();
   }, []);
 
-  const signIn = async (email: string, password: string) => {
-    const response = await fetch('/api/auth/login', {
+  const createAnonymousAccount = async (name?: string): Promise<AuthUser> => {
+    const response = await fetch('/api/auth/create-anonymous', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ name }),
       credentials: 'include',
     });
 
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.error || 'Login failed');
+      throw new Error(data.error || 'Failed to create account');
     }
 
     setUser(data.user);
+    return data.user;
   };
 
   const signInWithRecoveryKey = async (recoveryKey: string) => {
@@ -75,26 +74,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.error || 'Recovery login failed');
+      throw new Error(data.error || 'Invalid recovery key');
     }
 
-    setUser(data.user);
-  };
-
-  const register = async (email: string, password: string, name?: string) => {
-    const response = await fetch('/api/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, name }),
-      credentials: 'include',
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      throw new Error(data.error || 'Registration failed');
-    }
-    
     setUser(data.user);
   };
 
@@ -132,9 +114,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const value = {
     user,
     loading,
-    signIn,
+    createAnonymousAccount,
     signInWithRecoveryKey,
-    register,
     signOut,
     updateUser,
     regenerateRecoveryKey,

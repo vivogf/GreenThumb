@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { PlantCard, PlantCardSkeleton, type LayoutMode } from '@/components/PlantCard';
@@ -14,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 type SortOption = 'watering' | 'name' | 'location' | 'date';
 
 export default function Dashboard() {
+  const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [wateringPlantId, setWateringPlantId] = useState<string | null>(null);
@@ -68,15 +70,15 @@ export default function Dashboard() {
     onError: (error, _, context) => {
       queryClient.setQueryData(['/api/plants'], context?.previousPlants);
       toast({
-        title: 'Error',
-        description: 'Failed to update watering status',
+        title: t('common.error'),
+        description: t('common.error'),
         variant: 'destructive',
       });
     },
     onSuccess: () => {
       toast({
-        title: 'Plant watered!',
-        description: 'Watering date updated successfully',
+        title: t('plant.watered'),
+        description: t('plant.watered'),
       });
     },
     onSettled: () => {
@@ -92,15 +94,15 @@ export default function Dashboard() {
     },
     onSuccess: (data) => {
       toast({
-        title: 'All plants watered!',
-        description: `${data.count} plant(s) watered today`,
+        title: t('plant.watered'),
+        description: `${data.count} ${t('dashboard.plantsWatered')}`,
       });
       queryClient.invalidateQueries({ queryKey: ['/api/plants'] });
     },
     onError: () => {
       toast({
-        title: 'Error',
-        description: 'Failed to water all plants',
+        title: t('common.error'),
+        description: t('common.error'),
         variant: 'destructive',
       });
     },
@@ -113,15 +115,15 @@ export default function Dashboard() {
     },
     onSuccess: (data) => {
       toast({
-        title: 'Watering postponed!',
-        description: `${data.count} plant(s) postponed to tomorrow`,
+        title: t('dashboard.postponeAll'),
+        description: `${data.count} ${t('dashboard.plantsPostponed')}`,
       });
       queryClient.invalidateQueries({ queryKey: ['/api/plants'] });
     },
     onError: () => {
       toast({
-        title: 'Error',
-        description: 'Failed to postpone watering',
+        title: t('common.error'),
+        description: t('common.error'),
         variant: 'destructive',
       });
     },
@@ -178,7 +180,7 @@ export default function Dashboard() {
     return (
       <div className="p-4 space-y-6 pb-24">
         <div className="space-y-4">
-          <h2 className="text-xl font-medium">Loading plants...</h2>
+          <h2 className="text-xl font-medium">{t('common.loading')}</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {[1, 2, 3].map((i) => (
               <PlantCardSkeleton key={i} />
@@ -195,12 +197,12 @@ export default function Dashboard() {
         <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4">
           <Sprout className="w-10 h-10 text-primary" />
         </div>
-        <h2 className="text-2xl font-medium mb-2">No plants yet</h2>
+        <h2 className="text-2xl font-medium mb-2">{t('dashboard.noPlants')}</h2>
         <p className="text-muted-foreground mb-6 max-w-md">
-          Start your plant care journey by adding your first plant. Track watering schedules and keep your green friends thriving!
+          {t('dashboard.startTracking')}
         </p>
         <Button onClick={() => setLocation('/add-plant')} data-testid="button-add-first-plant">
-          Add Your First Plant
+          {t('dashboard.addFirstPlant')}
         </Button>
       </div>
     );
@@ -213,7 +215,7 @@ export default function Dashboard() {
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search plants..."
+              placeholder={t('dashboard.search')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
@@ -225,10 +227,10 @@ export default function Dashboard() {
               <SelectValue placeholder="Sort by" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="watering">Watering needed</SelectItem>
-              <SelectItem value="name">Name (A-Z)</SelectItem>
-              <SelectItem value="location">Location</SelectItem>
-              <SelectItem value="date">Date added</SelectItem>
+              <SelectItem value="watering">{t('dashboard.needsWater')}</SelectItem>
+              <SelectItem value="name">A-Z</SelectItem>
+              <SelectItem value="location">{t('addPlant.locationLabel')}</SelectItem>
+              <SelectItem value="date">{t('plantDetails.history')}</SelectItem>
             </SelectContent>
           </Select>
           <Button
@@ -256,7 +258,7 @@ export default function Dashboard() {
               data-testid="button-water-all"
             >
               <Droplets className="w-4 h-4 mr-2" />
-              {waterAllMutation.isPending ? 'Watering...' : 'Water All Today'}
+              {t('dashboard.waterAll')}
             </Button>
             <Button
               onClick={() => postponeAllMutation.mutate()}
@@ -266,7 +268,7 @@ export default function Dashboard() {
               data-testid="button-postpone-all"
             >
               <CalendarClock className="w-4 h-4 mr-2" />
-              {postponeAllMutation.isPending ? 'Postponing...' : 'Postpone to Tomorrow'}
+              {t('dashboard.postponeAll')}
             </Button>
           </div>
         )}
@@ -276,7 +278,7 @@ export default function Dashboard() {
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-destructive animate-pulse"></div>
-            <h2 className="text-xl font-medium text-foreground">Needs Water</h2>
+            <h2 className="text-xl font-medium text-foreground">{t('dashboard.needsWater')}</h2>
           </div>
           <div className={layout === 'compact' ? 'space-y-2' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'} data-testid="section-needs-water">
             {needsWater.map((plant) => (
@@ -297,7 +299,7 @@ export default function Dashboard() {
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-primary"></div>
-            <h2 className="text-xl font-medium text-foreground">All Good</h2>
+            <h2 className="text-xl font-medium text-foreground">{t('dashboard.healthy')}</h2>
           </div>
           <div className={layout === 'compact' ? 'space-y-2' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'} data-testid="section-all-good">
             {allGood.map((plant) => (

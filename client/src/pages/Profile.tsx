@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -7,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { useLocation } from 'wouter';
-import { LogOut, User, Leaf, Bell, BellOff, Clock, Key, Copy, RefreshCw } from 'lucide-react';
+import { LogOut, User, Leaf, Bell, BellOff, Clock, Key, Copy, RefreshCw, Globe } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,6 +35,7 @@ function urlBase64ToUint8Array(base64String: string) {
 }
 
 export default function Profile() {
+  const { t, i18n } = useTranslation();
   const { user, signOut, updateUser, regenerateRecoveryKey } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
@@ -45,11 +47,17 @@ export default function Profile() {
   const [showRecoveryKey, setShowRecoveryKey] = useState(false);
   const [isRegeneratingKey, setIsRegeneratingKey] = useState(false);
 
+  const currentLang = i18n.language?.startsWith('ru') ? 'ru' : 'en';
+
+  const changeLanguage = (lang: string) => {
+    i18n.changeLanguage(lang);
+  };
+
   useEffect(() => {
     const checkNotificationSupport = async () => {
       if ('serviceWorker' in navigator && 'PushManager' in window) {
         setNotificationsSupported(true);
-        
+
         try {
           const response = await fetch('/api/push/subscription', {
             credentials: 'include',
@@ -62,15 +70,15 @@ export default function Profile() {
       }
       setIsLoading(false);
     };
-    
+
     checkNotificationSupport();
   }, []);
 
   const handleNotificationToggle = async (enabled: boolean) => {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
       toast({
-        title: 'Not supported',
-        description: 'Push notifications are not supported in this browser.',
+        title: t('common.error'),
+        description: t('common.error'),
         variant: 'destructive',
       });
       return;
@@ -83,8 +91,8 @@ export default function Profile() {
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
           toast({
-            title: 'Permission denied',
-            description: 'Please enable notifications in your browser settings.',
+            title: t('common.error'),
+            description: t('common.error'),
             variant: 'destructive',
           });
           setIsLoading(false);
@@ -112,8 +120,8 @@ export default function Profile() {
         if (response.ok) {
           setNotificationsEnabled(true);
           toast({
-            title: 'Notifications enabled',
-            description: 'You will receive reminders when your plants need watering.',
+            title: t('profile.notificationsEnabled'),
+            description: t('profile.notificationsEnabledHint'),
           });
         }
       } else {
@@ -132,15 +140,15 @@ export default function Profile() {
 
         setNotificationsEnabled(false);
         toast({
-          title: 'Notifications disabled',
-          description: 'You will no longer receive watering reminders.',
+          title: t('profile.notificationsDisabled'),
+          description: t('profile.notificationsDisabledHint'),
         });
       }
     } catch (error) {
       console.error('Notification toggle error:', error);
       toast({
-        title: 'Error',
-        description: 'Failed to update notification settings.',
+        title: t('common.error'),
+        description: t('common.error'),
         variant: 'destructive',
       });
     }
@@ -157,21 +165,20 @@ export default function Profile() {
 
       if (response.ok) {
         toast({
-          title: 'Test sent',
-          description: 'Check for a notification!',
+          title: t('profile.testSent'),
+          description: t('profile.testSentHint'),
         });
       } else {
-        const data = await response.json();
         toast({
-          title: 'Error',
-          description: data.error || 'Failed to send test notification.',
+          title: t('common.error'),
+          description: t('common.error'),
           variant: 'destructive',
         });
       }
     } catch (error) {
       toast({
-        title: 'Error',
-        description: 'Failed to send test notification.',
+        title: t('common.error'),
+        description: t('common.error'),
         variant: 'destructive',
       });
     }
@@ -191,16 +198,16 @@ export default function Profile() {
         const data = await response.json();
         updateUser(data.user);
         toast({
-          title: 'Settings saved',
-          description: 'Notification time updated successfully.',
+          title: t('profile.settingsSaved'),
+          description: t('profile.notificationTimeUpdated'),
         });
       } else {
         throw new Error('Failed to update notification time');
       }
     } catch (error) {
       toast({
-        title: 'Error',
-        description: 'Failed to save notification time.',
+        title: t('common.error'),
+        description: t('common.error'),
         variant: 'destructive',
       });
     }
@@ -210,8 +217,8 @@ export default function Profile() {
   const handleSignOut = async () => {
     await signOut();
     toast({
-      title: 'Signed out',
-      description: 'You have been signed out successfully.',
+      title: t('profile.signedOut'),
+      description: t('profile.signedOutSuccess'),
     });
     setLocation('/login');
   };
@@ -220,8 +227,8 @@ export default function Profile() {
     if (user?.recovery_key) {
       await navigator.clipboard.writeText(user.recovery_key);
       toast({
-        title: 'Copied!',
-        description: 'Recovery key copied to clipboard.',
+        title: t('profile.copied'),
+        description: t('profile.copiedHint'),
       });
     }
   };
@@ -231,13 +238,13 @@ export default function Profile() {
     try {
       await regenerateRecoveryKey();
       toast({
-        title: 'Key regenerated',
-        description: 'Your new recovery key has been generated. Make sure to save it!',
+        title: t('profile.keyRegenerated'),
+        description: t('profile.keyRegeneratedHint'),
       });
     } catch (error) {
       toast({
-        title: 'Error',
-        description: 'Failed to regenerate recovery key.',
+        title: t('common.error'),
+        description: t('common.error'),
         variant: 'destructive',
       });
     }
@@ -255,10 +262,10 @@ export default function Profile() {
           </div>
           <div>
             <CardTitle className="text-2xl" data-testid="text-user-name">
-              {user?.name || 'My Profile'}
+              {user?.name || t('profile.title')}
             </CardTitle>
             <CardDescription className="mt-2">
-              Anonymous account
+              {t('profile.anonymous')}
             </CardDescription>
           </div>
         </CardHeader>
@@ -266,11 +273,39 @@ export default function Profile() {
           <div className="space-y-2 p-4 bg-muted/50 rounded-lg">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Leaf className="w-4 h-4 text-primary" />
-              <span>GreenThumb Plant Care</span>
+              <span>{t('profile.appDescription')}</span>
             </div>
             <p className="text-sm text-muted-foreground">
-              Track your plants' watering schedules and keep them healthy and thriving.
+              {t('profile.appTagline')}
             </p>
+          </div>
+
+          {/* Language Switcher */}
+          <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <Globe className="w-4 h-4 text-primary" />
+                <Label className="text-sm font-medium">{t('profile.language')}</Label>
+              </div>
+              <div className="flex gap-1">
+                <Button
+                  variant={currentLang === 'ru' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => changeLanguage('ru')}
+                  className="px-3 font-medium"
+                >
+                  RU
+                </Button>
+                <Button
+                  variant={currentLang === 'en' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => changeLanguage('en')}
+                  className="px-3 font-medium"
+                >
+                  EN
+                </Button>
+              </div>
+            </div>
           </div>
 
           {notificationsSupported && (
@@ -283,7 +318,7 @@ export default function Profile() {
                     <BellOff className="w-4 h-4 text-muted-foreground" />
                   )}
                   <Label htmlFor="notifications" className="text-sm font-medium">
-                    Watering Reminders
+                    {t('profile.notifications')}
                   </Label>
                 </div>
                 <Switch
@@ -295,7 +330,7 @@ export default function Profile() {
                 />
               </div>
               <p className="text-xs text-muted-foreground">
-                Get notified when your plants need watering.
+                {t('profile.notificationsHint')}
               </p>
               {notificationsEnabled && (
                 <>
@@ -303,7 +338,7 @@ export default function Profile() {
                     <div className="flex items-center gap-2">
                       <Clock className="w-4 h-4 text-primary" />
                       <Label htmlFor="notification-time" className="text-sm font-medium">
-                        Notification Time
+                        {t('profile.notificationTime')}
                       </Label>
                     </div>
                     <div className="flex gap-2">
@@ -321,11 +356,11 @@ export default function Profile() {
                         disabled={isSavingTime}
                         data-testid="button-save-notification-time"
                       >
-                        {isSavingTime ? 'Saving...' : 'Save'}
+                        {isSavingTime ? t('profile.saving') : t('profile.save')}
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Choose when you want to receive daily reminders (your local time).
+                      {t('profile.notificationTimeHint')}
                     </p>
                   </div>
                   <Button
@@ -335,7 +370,7 @@ export default function Profile() {
                     className="w-full"
                     data-testid="button-test-notification"
                   >
-                    Send Test Notification
+                    {t('profile.testNotification')}
                   </Button>
                 </>
               )}
@@ -347,18 +382,18 @@ export default function Profile() {
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-2">
                 <Key className="w-4 h-4 text-primary" />
-                <Label className="text-sm font-medium">Recovery Key</Label>
+                <Label className="text-sm font-medium">{t('profile.recoveryKey')}</Label>
               </div>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setShowRecoveryKey(!showRecoveryKey)}
               >
-                {showRecoveryKey ? 'Hide' : 'Show'}
+                {showRecoveryKey ? t('profile.hide') : t('profile.show')}
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Save this key to recover your account if you lose access.
+              {t('profile.recoveryKeyHint')}
             </p>
             {showRecoveryKey && user?.recovery_key && (
               <div className="space-y-2">
@@ -370,7 +405,6 @@ export default function Profile() {
                     variant="outline"
                     size="icon"
                     onClick={handleCopyRecoveryKey}
-                    title="Copy to clipboard"
                   >
                     <Copy className="w-4 h-4" />
                   </Button>
@@ -383,7 +417,7 @@ export default function Profile() {
                   className="w-full"
                 >
                   <RefreshCw className={`w-4 h-4 mr-2 ${isRegeneratingKey ? 'animate-spin' : ''}`} />
-                  {isRegeneratingKey ? 'Generating...' : 'Generate New Key'}
+                  {isRegeneratingKey ? t('profile.generating') : t('profile.generateNewKey')}
                 </Button>
               </div>
             )}
@@ -393,24 +427,24 @@ export default function Profile() {
             <AlertDialogTrigger asChild>
               <Button variant="destructive" className="w-full" data-testid="button-sign-out">
                 <LogOut className="w-4 h-4 mr-2" />
-                Sign Out
+                {t('profile.signOut')}
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Sign out?</AlertDialogTitle>
+                <AlertDialogTitle>{t('profile.signOutConfirm')}</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Are you sure you want to sign out? You'll need to sign in again to access your plants.
+                  {t('profile.signOutWarning')}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel data-testid="button-cancel-sign-out">Cancel</AlertDialogCancel>
+                <AlertDialogCancel data-testid="button-cancel-sign-out">{t('common.cancel')}</AlertDialogCancel>
                 <AlertDialogAction
                   onClick={handleSignOut}
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                   data-testid="button-confirm-sign-out"
                 >
-                  Sign Out
+                  {t('profile.signOut')}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

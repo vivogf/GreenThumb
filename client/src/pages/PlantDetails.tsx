@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useLocation, useParams } from 'wouter';
+import { useTranslation } from 'react-i18next';
 import type { Plant } from '@shared/schema';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -38,6 +39,7 @@ export default function PlantDetails() {
   const { id } = useParams();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { t } = useTranslation();
   const [isEditingSettings, setIsEditingSettings] = useState(false);
   const [editNotes, setEditNotes] = useState<string | null>(null);
   
@@ -63,15 +65,15 @@ export default function PlantDetails() {
     },
     onSuccess: () => {
       toast({
-        title: 'Plant deleted',
-        description: 'The plant has been removed from your collection.',
+        title: t('plantDetails.plantDeleted'),
+        description: t('plantDetails.plantDeletedDescription'),
       });
       queryClient.invalidateQueries({ queryKey: ['/api/plants'] });
       setLocation('/');
     },
     onError: (error: any) => {
       toast({
-        title: 'Error',
+        title: t('common.error'),
         description: error.message,
         variant: 'destructive',
       });
@@ -87,15 +89,15 @@ export default function PlantDetails() {
     },
     onSuccess: () => {
       toast({
-        title: 'Plant watered!',
-        description: 'Watering date updated successfully',
+        title: t('plantDetails.plantWatered'),
+        description: t('plantDetails.wateringUpdated'),
       });
       queryClient.invalidateQueries({ queryKey: ['/api/plants', id] });
       queryClient.invalidateQueries({ queryKey: ['/api/plants'] });
     },
     onError: (error: any) => {
       toast({
-        title: 'Error',
+        title: t('common.error'),
         description: error.message,
         variant: 'destructive',
       });
@@ -111,15 +113,15 @@ export default function PlantDetails() {
     },
     onSuccess: () => {
       toast({
-        title: 'Plant fertilized!',
-        description: 'Fertilizing date updated successfully',
+        title: t('plantDetails.plantFertilized'),
+        description: t('plantDetails.fertilizingUpdated'),
       });
       queryClient.invalidateQueries({ queryKey: ['/api/plants', id] });
       queryClient.invalidateQueries({ queryKey: ['/api/plants'] });
     },
     onError: (error: any) => {
       toast({
-        title: 'Error',
+        title: t('common.error'),
         description: error.message,
         variant: 'destructive',
       });
@@ -135,15 +137,15 @@ export default function PlantDetails() {
     },
     onSuccess: () => {
       toast({
-        title: 'Plant repotted!',
-        description: 'Repotting date updated successfully',
+        title: t('plantDetails.plantRepotted'),
+        description: t('plantDetails.repottingUpdated'),
       });
       queryClient.invalidateQueries({ queryKey: ['/api/plants', id] });
       queryClient.invalidateQueries({ queryKey: ['/api/plants'] });
     },
     onError: (error: any) => {
       toast({
-        title: 'Error',
+        title: t('common.error'),
         description: error.message,
         variant: 'destructive',
       });
@@ -159,15 +161,15 @@ export default function PlantDetails() {
     },
     onSuccess: () => {
       toast({
-        title: 'Plant pruned!',
-        description: 'Pruning date updated successfully',
+        title: t('plantDetails.plantPruned'),
+        description: t('plantDetails.pruningUpdated'),
       });
       queryClient.invalidateQueries({ queryKey: ['/api/plants', id] });
       queryClient.invalidateQueries({ queryKey: ['/api/plants'] });
     },
     onError: (error: any) => {
       toast({
-        title: 'Error',
+        title: t('common.error'),
         description: error.message,
         variant: 'destructive',
       });
@@ -186,8 +188,8 @@ export default function PlantDetails() {
     },
     onSuccess: () => {
       toast({
-        title: 'Settings updated!',
-        description: 'Care schedule updated successfully',
+        title: t('plantDetails.settingsUpdated'),
+        description: t('plantDetails.careScheduleUpdated'),
       });
       queryClient.invalidateQueries({ queryKey: ['/api/plants', id] });
       queryClient.invalidateQueries({ queryKey: ['/api/plants'] });
@@ -195,7 +197,7 @@ export default function PlantDetails() {
     },
     onError: (error: any) => {
       toast({
-        title: 'Error',
+        title: t('common.error'),
         description: error.message,
         variant: 'destructive',
       });
@@ -209,8 +211,8 @@ export default function PlantDetails() {
     },
     onSuccess: () => {
       toast({
-        title: 'Notes updated!',
-        description: 'Plant notes saved successfully',
+        title: t('plantDetails.notesUpdated'),
+        description: t('plantDetails.notesSaved'),
       });
       queryClient.invalidateQueries({ queryKey: ['/api/plants', id] });
       queryClient.invalidateQueries({ queryKey: ['/api/plants'] });
@@ -218,7 +220,7 @@ export default function PlantDetails() {
     },
     onError: (error: any) => {
       toast({
-        title: 'Error',
+        title: t('common.error'),
         description: error.message,
         variant: 'destructive',
       });
@@ -258,9 +260,9 @@ export default function PlantDetails() {
   if (!plant) {
     return (
       <div className="p-4 text-center">
-        <p>Plant not found</p>
+        <p>{t('plantDetails.plantNotFound')}</p>
         <Button onClick={() => setLocation('/')} className="mt-4">
-          Go Home
+          {t('plantDetails.goHome')}
         </Button>
       </div>
     );
@@ -289,7 +291,7 @@ export default function PlantDetails() {
         data-testid="button-back"
       >
         <ArrowLeft className="w-4 h-4 mr-2" />
-        Back
+        {t('plantDetails.back')}
       </Button>
 
       <Card className="overflow-hidden">
@@ -311,7 +313,9 @@ export default function PlantDetails() {
               {plant.location}
             </Badge>
             <Badge variant="outline">
-              Every {plant.water_frequency_days} {plant.water_frequency_days === 1 ? 'day' : 'days'}
+              {plant.water_frequency_days === 1
+                ? t('plantDetails.everyDay', { count: plant.water_frequency_days })
+                : t('plantDetails.everyDays', { count: plant.water_frequency_days })}
             </Badge>
             <Button
               variant="ghost"
@@ -321,7 +325,7 @@ export default function PlantDetails() {
               data-testid="button-edit-settings"
             >
               <Settings className="w-4 h-4 mr-1" />
-              Settings
+              {t('plantDetails.settings')}
             </Button>
           </div>
         </CardHeader>
@@ -330,7 +334,7 @@ export default function PlantDetails() {
             <div className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg">
               <Droplets className="w-5 h-5 text-primary mt-0.5" />
               <div className="flex-1">
-                <p className="text-sm font-medium">Last Watered</p>
+                <p className="text-sm font-medium">{t('plantDetails.lastWatered')}</p>
                 <p className="text-sm text-muted-foreground" data-testid="text-last-watered">
                   {format(new Date(plant.last_watered_date), 'PPP')}
                   <span className="ml-2">
@@ -343,7 +347,7 @@ export default function PlantDetails() {
             <div className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg">
               <Calendar className="w-5 h-5 text-primary mt-0.5" />
               <div className="flex-1">
-                <p className="text-sm font-medium">Next Watering</p>
+                <p className="text-sm font-medium">{t('plantDetails.nextWatering')}</p>
                 <p className="text-sm text-muted-foreground" data-testid="text-next-watering">
                   {format(nextWateringDate, 'PPP')}
                   <span className="ml-2">
@@ -357,18 +361,18 @@ export default function PlantDetails() {
           {/* Advanced Care Schedule */}
           {(nextFertilizeDate || nextRepotDate || nextPruneDate) && (
             <div className="space-y-3">
-              <h3 className="font-medium">Advanced Care Schedule</h3>
-              
+              <h3 className="font-medium">{t('plantDetails.advancedCare')}</h3>
+
               {nextFertilizeDate && (
                 <div className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg">
                   <Sprout className="w-5 h-5 text-primary mt-0.5" />
                   <div className="flex-1">
-                    <p className="text-sm font-medium">Fertilizing</p>
+                    <p className="text-sm font-medium">{t('plantDetails.fertilizing')}</p>
                     <p className="text-sm text-muted-foreground">
-                      Last: {format(new Date(plant.last_fertilized_date!), 'PPP')}
+                      {t('plantDetails.last', { date: format(new Date(plant.last_fertilized_date!), 'PPP') })}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      Next: {format(nextFertilizeDate, 'PPP')}
+                      {t('plantDetails.next', { date: format(nextFertilizeDate, 'PPP') })}
                       <span className="ml-2">
                         ({formatDistanceToNow(nextFertilizeDate, { addSuffix: true })})
                       </span>
@@ -380,7 +384,7 @@ export default function PlantDetails() {
                     disabled={fertilizePlantMutation.isPending}
                     data-testid="button-fertilize"
                   >
-                    {fertilizePlantMutation.isPending ? '...' : 'Fertilize'}
+                    {fertilizePlantMutation.isPending ? '...' : t('plantDetails.fertilize')}
                   </Button>
                 </div>
               )}
@@ -389,12 +393,12 @@ export default function PlantDetails() {
                 <div className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg">
                   <Shovel className="w-5 h-5 text-primary mt-0.5" />
                   <div className="flex-1">
-                    <p className="text-sm font-medium">Repotting</p>
+                    <p className="text-sm font-medium">{t('plantDetails.repotting')}</p>
                     <p className="text-sm text-muted-foreground">
-                      Last: {format(new Date(plant.last_repotted_date!), 'PPP')}
+                      {t('plantDetails.last', { date: format(new Date(plant.last_repotted_date!), 'PPP') })}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      Next: {format(nextRepotDate, 'PPP')}
+                      {t('plantDetails.next', { date: format(nextRepotDate, 'PPP') })}
                       <span className="ml-2">
                         ({formatDistanceToNow(nextRepotDate, { addSuffix: true })})
                       </span>
@@ -406,7 +410,7 @@ export default function PlantDetails() {
                     disabled={repotPlantMutation.isPending}
                     data-testid="button-repot"
                   >
-                    {repotPlantMutation.isPending ? '...' : 'Repot'}
+                    {repotPlantMutation.isPending ? '...' : t('plantDetails.repot')}
                   </Button>
                 </div>
               )}
@@ -415,12 +419,12 @@ export default function PlantDetails() {
                 <div className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg">
                   <Scissors className="w-5 h-5 text-primary mt-0.5" />
                   <div className="flex-1">
-                    <p className="text-sm font-medium">Pruning</p>
+                    <p className="text-sm font-medium">{t('plantDetails.pruning')}</p>
                     <p className="text-sm text-muted-foreground">
-                      Last: {format(new Date(plant.last_pruned_date!), 'PPP')}
+                      {t('plantDetails.last', { date: format(new Date(plant.last_pruned_date!), 'PPP') })}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      Next: {format(nextPruneDate, 'PPP')}
+                      {t('plantDetails.next', { date: format(nextPruneDate, 'PPP') })}
                       <span className="ml-2">
                         ({formatDistanceToNow(nextPruneDate, { addSuffix: true })})
                       </span>
@@ -432,7 +436,7 @@ export default function PlantDetails() {
                     disabled={prunePlantMutation.isPending}
                     data-testid="button-prune"
                   >
-                    {prunePlantMutation.isPending ? '...' : 'Prune'}
+                    {prunePlantMutation.isPending ? '...' : t('plantDetails.prune')}
                   </Button>
                 </div>
               )}
@@ -441,7 +445,7 @@ export default function PlantDetails() {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <h3 className="font-medium">Notes</h3>
+              <h3 className="font-medium">{t('plantDetails.notes')}</h3>
               {editNotes === null ? (
                 <Button
                   variant="ghost"
@@ -449,7 +453,7 @@ export default function PlantDetails() {
                   onClick={() => setEditNotes(plant.notes || '')}
                   data-testid="button-edit-notes"
                 >
-                  {plant.notes ? 'Edit' : 'Add Notes'}
+                  {plant.notes ? t('plantDetails.edit') : t('plantDetails.addNotes')}
                 </Button>
               ) : (
                 <div className="flex gap-1">
@@ -477,7 +481,7 @@ export default function PlantDetails() {
               <Textarea
                 value={editNotes}
                 onChange={(e) => setEditNotes(e.target.value)}
-                placeholder="Add notes about this plant..."
+                placeholder={t('plantDetails.notesPlaceholder')}
                 className="min-h-[100px]"
                 data-testid="input-notes"
               />
@@ -486,7 +490,7 @@ export default function PlantDetails() {
                 {plant.notes}
               </p>
             ) : (
-              <p className="text-sm text-muted-foreground italic">No notes yet</p>
+              <p className="text-sm text-muted-foreground italic">{t('plantDetails.noNotes')}</p>
             )}
           </div>
 
@@ -497,7 +501,7 @@ export default function PlantDetails() {
               className="flex-1"
               data-testid="button-water-plant"
             >
-              {waterPlantMutation.isPending ? 'Watering...' : 'Water Plant'}
+              {waterPlantMutation.isPending ? t('plantDetails.watering') : t('plantDetails.waterPlant')}
             </Button>
 
             <AlertDialog>
@@ -508,19 +512,19 @@ export default function PlantDetails() {
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Delete this plant?</AlertDialogTitle>
+                  <AlertDialogTitle>{t('plantDetails.deleteTitle')}</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This action cannot be undone. This will permanently delete {plant.name} from your collection.
+                    {t('plantDetails.deleteDescription', { name: plant.name })}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+                  <AlertDialogCancel data-testid="button-cancel-delete">{t('plantDetails.cancel')}</AlertDialogCancel>
                   <AlertDialogAction
                     onClick={() => deletePlantMutation.mutate()}
                     className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                     data-testid="button-confirm-delete"
                   >
-                    Delete
+                    {t('plantDetails.delete')}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -532,16 +536,16 @@ export default function PlantDetails() {
       <Dialog open={isEditingSettings} onOpenChange={setIsEditingSettings}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Care Settings</DialogTitle>
+            <DialogTitle>{t('plantDetails.careSettings')}</DialogTitle>
             <DialogDescription>
-              Adjust the care schedule for {plant.name}
+              {t('plantDetails.careSettingsDescription', { name: plant.name })}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label htmlFor="water-frequency" className="flex items-center gap-2">
                 <Droplets className="w-4 h-4 text-primary" />
-                Watering Frequency (days)
+                {t('plantDetails.wateringFrequency')}
               </Label>
               <Input
                 id="water-frequency"
@@ -556,7 +560,7 @@ export default function PlantDetails() {
             <div className="grid gap-2">
               <Label htmlFor="fertilize-frequency" className="flex items-center gap-2">
                 <Sprout className="w-4 h-4 text-green-600" />
-                Fertilizing Frequency (days)
+                {t('plantDetails.fertilizingFrequency')}
               </Label>
               <Input
                 id="fertilize-frequency"
@@ -565,14 +569,14 @@ export default function PlantDetails() {
                 max="365"
                 value={fertilizeFrequency || ''}
                 onChange={(e) => setFertilizeFrequency(e.target.value ? parseInt(e.target.value) : null)}
-                placeholder="Leave empty to disable"
+                placeholder={t('plantDetails.leaveEmpty')}
                 data-testid="input-fertilize-frequency"
               />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="repot-frequency" className="flex items-center gap-2">
                 <Shovel className="w-4 h-4 text-amber-600" />
-                Repotting Frequency (months)
+                {t('plantDetails.repottingFrequency')}
               </Label>
               <Input
                 id="repot-frequency"
@@ -581,14 +585,14 @@ export default function PlantDetails() {
                 max="60"
                 value={repotFrequency || ''}
                 onChange={(e) => setRepotFrequency(e.target.value ? parseInt(e.target.value) : null)}
-                placeholder="Leave empty to disable"
+                placeholder={t('plantDetails.leaveEmpty')}
                 data-testid="input-repot-frequency"
               />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="prune-frequency" className="flex items-center gap-2">
                 <Scissors className="w-4 h-4 text-purple-600" />
-                Pruning Frequency (months)
+                {t('plantDetails.pruningFrequency')}
               </Label>
               <Input
                 id="prune-frequency"
@@ -597,21 +601,21 @@ export default function PlantDetails() {
                 max="60"
                 value={pruneFrequency || ''}
                 onChange={(e) => setPruneFrequency(e.target.value ? parseInt(e.target.value) : null)}
-                placeholder="Leave empty to disable"
+                placeholder={t('plantDetails.leaveEmpty')}
                 data-testid="input-prune-frequency"
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditingSettings(false)}>
-              Cancel
+              {t('plantDetails.cancel')}
             </Button>
-            <Button 
+            <Button
               onClick={handleSaveSettings}
               disabled={updateSettingsMutation.isPending}
               data-testid="button-save-settings"
             >
-              {updateSettingsMutation.isPending ? 'Saving...' : 'Save Changes'}
+              {updateSettingsMutation.isPending ? t('plantDetails.saving') : t('plantDetails.saveChanges')}
             </Button>
           </DialogFooter>
         </DialogContent>

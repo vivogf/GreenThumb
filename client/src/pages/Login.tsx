@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
@@ -11,6 +12,7 @@ import { Leaf, Key, User, Copy, Check, AlertTriangle, ArrowLeft } from 'lucide-r
 type LoginMode = 'choose' | 'create' | 'login' | 'show-key';
 
 export default function Login() {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<LoginMode>('choose');
   const [name, setName] = useState('');
@@ -35,7 +37,7 @@ export default function Login() {
       setMode('show-key');
     } catch (error: any) {
       toast({
-        title: 'Error',
+        title: t('common.error'),
         description: error.message,
         variant: 'destructive',
       });
@@ -50,12 +52,12 @@ export default function Login() {
     try {
       await signInWithRecoveryKey(recoveryKey);
       toast({
-        title: 'Welcome back!',
-        description: 'Signed in successfully.',
+        title: t('common.welcomeBack'),
+        description: t('common.signedIn'),
       });
     } catch (error: any) {
       toast({
-        title: 'Error',
+        title: t('common.error'),
         description: error.message,
         variant: 'destructive',
       });
@@ -67,8 +69,8 @@ export default function Login() {
     await navigator.clipboard.writeText(newUserKey);
     setCopied(true);
     toast({
-      title: 'Copied!',
-      description: 'Recovery key copied to clipboard.',
+      title: t('profile.copied'),
+      description: t('profile.copiedHint'),
     });
     setTimeout(() => setCopied(false), 2000);
   };
@@ -88,9 +90,9 @@ export default function Login() {
                 <Leaf className="w-8 h-8 text-primary" />
               </div>
             </div>
-            <CardTitle className="text-3xl font-medium">GreenThumb</CardTitle>
+            <CardTitle className="text-3xl font-medium">{t('login.title')}</CardTitle>
             <CardDescription>
-              Track and care for your plants with ease
+              {t('login.subtitle')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -100,7 +102,7 @@ export default function Login() {
               size="lg"
             >
               <User className="w-4 h-4 mr-2" />
-              Create New Account
+              {t('login.createAccount')}
             </Button>
             <Button
               onClick={() => setMode('login')}
@@ -109,7 +111,7 @@ export default function Login() {
               size="lg"
             >
               <Key className="w-4 h-4 mr-2" />
-              I Have a Key
+              {t('login.haveKey')}
             </Button>
           </CardContent>
         </Card>
@@ -134,20 +136,20 @@ export default function Login() {
                 <Leaf className="w-8 h-8 text-primary" />
               </div>
             </div>
-            <CardTitle className="text-2xl font-medium">Create Account</CardTitle>
+            <CardTitle className="text-2xl font-medium">{t('login.createTitle')}</CardTitle>
             <CardDescription>
-              Anonymous account for your privacy
+              {t('login.createSubtitle')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Name (optional)</Label>
+              <Label htmlFor="name">{t('login.nameLabel')}</Label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   id="name"
                   type="text"
-                  placeholder="How should we call you?"
+                  placeholder={t('login.namePlaceholder')}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="pl-10"
@@ -159,11 +161,11 @@ export default function Login() {
               <div className="flex gap-3">
                 <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
                 <div className="text-sm">
-                  <p className="font-medium text-amber-500 mb-1">Important!</p>
+                  <p className="font-medium text-amber-500 mb-1">{t('login.importantTitle')}</p>
                   <p className="text-muted-foreground">
-                    After creating your account, you'll receive a unique recovery key.
-                    <strong className="text-foreground"> Save it in a password manager or a safe place</strong> —
-                    it's the only way to recover your account. We cannot restore access without it.
+                    {t('login.importantText')}
+                    <strong className="text-foreground"> {t('login.importantSaveIt')}</strong>
+                    {t('login.importantNoRestore')}
                   </p>
                 </div>
               </div>
@@ -175,14 +177,14 @@ export default function Login() {
               size="lg"
               disabled={loading}
             >
-              {loading ? 'Creating...' : 'Create Account'}
+              {loading ? t('login.creating') : t('login.create')}
             </Button>
 
             <button
               onClick={() => setMode('choose')}
               className="text-sm text-muted-foreground hover:text-primary transition-colors block w-full text-center"
             >
-              Back
+              {t('login.back')}
             </button>
           </CardContent>
         </Card>
@@ -201,9 +203,9 @@ export default function Login() {
                 <Check className="w-8 h-8 text-green-500" />
               </div>
             </div>
-            <CardTitle className="text-2xl font-medium">Account Created!</CardTitle>
+            <CardTitle className="text-2xl font-medium">{t('login.accountCreated')}</CardTitle>
             <CardDescription>
-              Save your recovery key now
+              {t('login.saveKeyNow')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -211,17 +213,16 @@ export default function Login() {
               <div className="flex gap-3">
                 <AlertTriangle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
                 <div className="text-sm">
-                  <p className="font-medium text-destructive mb-1">Save This Key!</p>
+                  <p className="font-medium text-destructive mb-1">{t('login.saveKeyWarningTitle')}</p>
                   <p className="text-muted-foreground">
-                    This is your <strong className="text-foreground">only way</strong> to access your account.
-                    If you lose it, your plants data will be <strong className="text-foreground">lost forever</strong>.
+                    {t('login.saveKeyWarningText')} <strong className="text-foreground">{t('login.saveKeyWarningOnly')}</strong> {t('login.saveKeyWarningAccess')} <strong className="text-foreground">{t('login.saveKeyWarningLost')}</strong>.
                   </p>
                 </div>
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label>Your Recovery Key</Label>
+              <Label>{t('login.yourRecoveryKey')}</Label>
               <div className="flex gap-2">
                 <code className="flex-1 p-3 bg-muted rounded-lg font-mono text-sm break-all select-all">
                   {newUserKey}
@@ -246,7 +247,7 @@ export default function Login() {
               className="w-full"
               size="lg"
             >
-              I've Saved My Key — Continue
+              {t('login.keySaved')}
             </Button>
           </CardContent>
         </Card>
@@ -270,21 +271,21 @@ export default function Login() {
               <Key className="w-8 h-8 text-primary" />
             </div>
           </div>
-          <CardTitle className="text-2xl font-medium">Welcome Back</CardTitle>
+          <CardTitle className="text-2xl font-medium">{t('login.welcomeBack')}</CardTitle>
           <CardDescription>
-            Enter your recovery key to sign in
+            {t('login.enterKey')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="recoveryKey">Recovery Key</Label>
+              <Label htmlFor="recoveryKey">{t('login.recoveryKeyLabel')}</Label>
               <div className="relative">
                 <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   id="recoveryKey"
                   type="text"
-                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  placeholder={t('login.recoveryKeyPlaceholder')}
                   value={recoveryKey}
                   onChange={(e) => setRecoveryKey(e.target.value)}
                   required
@@ -299,7 +300,7 @@ export default function Login() {
               disabled={loading}
               size="lg"
             >
-              {loading ? 'Signing in...' : 'Sign In'}
+              {loading ? t('login.signingIn') : t('login.signIn')}
             </Button>
           </form>
 
@@ -307,7 +308,7 @@ export default function Login() {
             onClick={() => setMode('choose')}
             className="mt-4 text-sm text-muted-foreground hover:text-primary transition-colors block w-full text-center"
           >
-            Back
+            {t('login.back')}
           </button>
         </CardContent>
       </Card>

@@ -2,6 +2,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { insertPlantSchema, type InsertPlant } from '@shared/schema';
 import { apiRequest } from '@/lib/queryClient';
@@ -22,6 +23,7 @@ import { cn } from '@/lib/utils';
 export default function AddPlant() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { t } = useTranslation();
   const { user } = useAuth();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -50,8 +52,8 @@ export default function AddPlant() {
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
         toast({
-          title: 'File too large',
-          description: 'Photo must be less than 5MB',
+          title: t('addPlant.fileTooLarge'),
+          description: t('addPlant.fileTooLargeHint'),
           variant: 'destructive',
         });
         return;
@@ -67,14 +69,52 @@ export default function AddPlant() {
     }
   };
 
-  const uploadPhoto = async (file: File): Promise<string> => {
-    // Store as base64 for demo - in production, use proper file storage
+  const compressImage = (file: File, maxSizeKB: number = 500): Promise<string> => {
     return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
+      const img = new Image();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      img.onload = () => {
+        // Calculate new dimensions (max 800px width/height to save space)
+        const maxDimension = 800;
+        let { width, height } = img;
+
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = (height / width) * maxDimension;
+            width = maxDimension;
+          } else {
+            width = (width / height) * maxDimension;
+            height = maxDimension;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        // Start with high quality and reduce until size is acceptable
+        let quality = 0.8;
+        let result = canvas.toDataURL('image/jpeg', quality);
+
+        // Reduce quality until we're under maxSizeKB
+        while (result.length > maxSizeKB * 1024 * 1.37 && quality > 0.1) {
+          quality -= 0.1;
+          result = canvas.toDataURL('image/jpeg', quality);
+        }
+
+        resolve(result);
+      };
+
+      img.onerror = reject;
+      img.src = URL.createObjectURL(file);
     });
+  };
+
+  const uploadPhoto = async (file: File): Promise<string> => {
+    // Compress image before storing as base64
+    return compressImage(file, 500);
   };
 
   const addPlantMutation = useMutation({
@@ -84,15 +124,15 @@ export default function AddPlant() {
     },
     onSuccess: () => {
       toast({
-        title: 'Plant added!',
-        description: 'Your new plant has been added successfully.',
+        title: t('addPlant.success'),
+        description: t('addPlant.successDescription'),
       });
       queryClient.invalidateQueries({ queryKey: ['/api/plants'] });
       setLocation('/');
     },
     onError: (error: any) => {
       toast({
-        title: 'Error',
+        title: t('common.error'),
         description: error.message,
         variant: 'destructive',
       });
@@ -113,7 +153,7 @@ export default function AddPlant() {
       } catch (error: any) {
         console.error('Photo upload failed:', error);
         toast({
-          title: 'Upload failed',
+          title: t('addPlant.uploadFailed'),
           description: error.message,
           variant: 'destructive',
         });
@@ -137,12 +177,12 @@ export default function AddPlant() {
         data-testid="button-back"
       >
         <ArrowLeft className="w-4 h-4 mr-2" />
-        Back
+        {t('addPlant.back')}
       </Button>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-2xl">Add New Plant</CardTitle>
+          <CardTitle className="text-2xl">{t('addPlant.title')}</CardTitle>
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -152,10 +192,10 @@ export default function AddPlant() {
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Plant Name</FormLabel>
+                    <FormLabel>{t('addPlant.nameLabel')}</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="e.g., Monstera Deliciosa"
+                        placeholder={t('addPlant.namePlaceholder')}
                         {...field}
                         data-testid="input-plant-name"
                       />
@@ -170,10 +210,10 @@ export default function AddPlant() {
                 name="location"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Location</FormLabel>
+                    <FormLabel>{t('addPlant.locationLabel')}</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="e.g., Living Room"
+                        placeholder={t('addPlant.locationPlaceholder')}
                         {...field}
                         data-testid="input-location"
                       />
@@ -188,14 +228,14 @@ export default function AddPlant() {
                 name="photo_url"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Plant Photo</FormLabel>
+                    <FormLabel>{t('addPlant.photoLabel')}</FormLabel>
                     <FormControl>
                       <div className="space-y-3">
                         {preview ? (
                           <div className="relative w-full bg-muted rounded-lg overflow-hidden">
                             <img
                               src={preview}
-                              alt="Plant preview"
+                              alt={t('addPlant.photoLabel')}
                               className="w-full h-48 object-cover"
                               data-testid="img-plant-preview"
                             />
@@ -216,8 +256,8 @@ export default function AddPlant() {
                           <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-muted-foreground rounded-lg cursor-pointer hover:bg-muted transition-colors" data-testid="label-photo-upload">
                             <div className="flex flex-col items-center justify-center pt-5 pb-6">
                               <Upload className="w-8 h-8 text-muted-foreground mb-2" />
-                              <p className="text-sm text-muted-foreground">Click to upload photo</p>
-                              <p className="text-xs text-muted-foreground">PNG, JPG up to 5MB</p>
+                              <p className="text-sm text-muted-foreground">{t('addPlant.photoPlaceholder')}</p>
+                              <p className="text-xs text-muted-foreground">{t('addPlant.photoHint')}</p>
                             </div>
                             <input
                               type="file"
@@ -240,7 +280,7 @@ export default function AddPlant() {
                 name="water_frequency_days"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Watering Frequency (days)</FormLabel>
+                    <FormLabel>{t('addPlant.wateringLabel')}</FormLabel>
                     <FormControl>
                       <Input
                         type="number"
@@ -260,7 +300,7 @@ export default function AddPlant() {
                 name="last_watered_date"
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
-                    <FormLabel>Last Watered Date</FormLabel>
+                    <FormLabel>{t('addPlant.lastWateredLabel')}</FormLabel>
                     <Popover>
                       <PopoverTrigger asChild>
                         <FormControl>
@@ -275,7 +315,7 @@ export default function AddPlant() {
                             {field.value ? (
                               format(new Date(field.value), "PPP")
                             ) : (
-                              <span>Pick a date</span>
+                              <span>{t('addPlant.pickDate')}</span>
                             )}
                             <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                           </Button>
@@ -294,7 +334,7 @@ export default function AddPlant() {
                       </PopoverContent>
                     </Popover>
                     <FormDescription>
-                      Select when you last watered this plant
+                      {t('addPlant.lastWateredHint')}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -302,8 +342,8 @@ export default function AddPlant() {
               />
 
               <div className="pt-4 border-t space-y-4">
-                <h3 className="text-lg font-medium">Advanced Care Schedule (Optional)</h3>
-                <p className="text-sm text-muted-foreground">Set reminders for fertilizing, repotting, and pruning</p>
+                <h3 className="text-lg font-medium">{t('addPlant.additionalCare')}</h3>
+                <p className="text-sm text-muted-foreground">{t('addPlant.additionalCareHint')}</p>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
@@ -311,12 +351,12 @@ export default function AddPlant() {
                     name="fertilize_frequency_days"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Fertilize Every (days)</FormLabel>
+                        <FormLabel>{t('addPlant.fertilizing')}</FormLabel>
                         <FormControl>
                           <Input
                             type="number"
                             min="1"
-                            placeholder="e.g., 30"
+                            placeholder={t('addPlant.fertilizePlaceholder')}
                             {...field}
                             value={field.value || ''}
                             onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
@@ -333,7 +373,7 @@ export default function AddPlant() {
                     name="last_fertilized_date"
                     render={({ field }) => (
                       <FormItem className="flex flex-col">
-                        <FormLabel>Last Fertilized</FormLabel>
+                        <FormLabel>{t('addPlant.lastFertilized')}</FormLabel>
                         <Popover>
                           <PopoverTrigger asChild>
                             <FormControl>
@@ -348,7 +388,7 @@ export default function AddPlant() {
                                 {field.value ? (
                                   format(new Date(field.value), "PPP")
                                 ) : (
-                                  <span>Pick a date</span>
+                                  <span>{t('addPlant.pickDate')}</span>
                                 )}
                                 <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                               </Button>
@@ -376,12 +416,12 @@ export default function AddPlant() {
                     name="repot_frequency_months"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Repot Every (months)</FormLabel>
+                        <FormLabel>{t('addPlant.repotting')}</FormLabel>
                         <FormControl>
                           <Input
                             type="number"
                             min="1"
-                            placeholder="e.g., 12"
+                            placeholder={t('addPlant.repotPlaceholder')}
                             {...field}
                             value={field.value || ''}
                             onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
@@ -398,7 +438,7 @@ export default function AddPlant() {
                     name="last_repotted_date"
                     render={({ field }) => (
                       <FormItem className="flex flex-col">
-                        <FormLabel>Last Repotted</FormLabel>
+                        <FormLabel>{t('addPlant.lastRepotted')}</FormLabel>
                         <Popover>
                           <PopoverTrigger asChild>
                             <FormControl>
@@ -413,7 +453,7 @@ export default function AddPlant() {
                                 {field.value ? (
                                   format(new Date(field.value), "PPP")
                                 ) : (
-                                  <span>Pick a date</span>
+                                  <span>{t('addPlant.pickDate')}</span>
                                 )}
                                 <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                               </Button>
@@ -441,12 +481,12 @@ export default function AddPlant() {
                     name="prune_frequency_months"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Prune Every (months)</FormLabel>
+                        <FormLabel>{t('addPlant.pruning')}</FormLabel>
                         <FormControl>
                           <Input
                             type="number"
                             min="1"
-                            placeholder="e.g., 6"
+                            placeholder={t('addPlant.prunePlaceholder')}
                             {...field}
                             value={field.value || ''}
                             onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
@@ -463,7 +503,7 @@ export default function AddPlant() {
                     name="last_pruned_date"
                     render={({ field }) => (
                       <FormItem className="flex flex-col">
-                        <FormLabel>Last Pruned</FormLabel>
+                        <FormLabel>{t('addPlant.lastPruned')}</FormLabel>
                         <Popover>
                           <PopoverTrigger asChild>
                             <FormControl>
@@ -478,7 +518,7 @@ export default function AddPlant() {
                                 {field.value ? (
                                   format(new Date(field.value), "PPP")
                                 ) : (
-                                  <span>Pick a date</span>
+                                  <span>{t('addPlant.pickDate')}</span>
                                 )}
                                 <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                               </Button>
@@ -508,10 +548,10 @@ export default function AddPlant() {
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Notes (Optional)</FormLabel>
+                    <FormLabel>{t('addPlant.notesLabel')}</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="Care instructions, observations, etc."
+                        placeholder={t('addPlant.notesPlaceholder')}
                         {...field}
                         data-testid="input-notes"
                       />
@@ -527,7 +567,7 @@ export default function AddPlant() {
                 disabled={addPlantMutation.isPending || isUploading}
                 data-testid="button-submit-plant"
               >
-                {isUploading ? 'Uploading Photo...' : addPlantMutation.isPending ? 'Adding Plant...' : 'Add Plant'}
+                {isUploading ? t('addPlant.uploading') : addPlantMutation.isPending ? t('addPlant.adding') : t('addPlant.add')}
               </Button>
             </form>
           </Form>

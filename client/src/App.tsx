@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { BottomNavigation } from "@/components/BottomNavigation";
+import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
 import AddPlant from "@/pages/AddPlant";
@@ -26,6 +27,7 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
         {children}
       </main>
       <BottomNavigation />
+      <PWAInstallPrompt />
     </div>
   );
 }

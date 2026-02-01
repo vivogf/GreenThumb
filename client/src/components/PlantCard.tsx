@@ -1,9 +1,10 @@
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Plant } from '@shared/schema';
-import { formatDistanceToNow, addDays, isPast, isToday, startOfDay } from 'date-fns';
+import { addDays, startOfDay } from 'date-fns';
 import { MapPin, Droplets, Heart } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
@@ -27,29 +28,28 @@ interface WaterButtonProps {
 }
 
 function WaterButton({ onWater, isWatering, needsWater, fullWidth, compact }: WaterButtonProps) {
+  const { t } = useTranslation();
   const [hearts, setHearts] = useState<{ id: number; x: number; initialVelocity: number; rotation: number }[]>([]);
   const [heartIdCounter, setHeartIdCounter] = useState(0);
 
   const handleWater = (e: React.MouseEvent) => {
     e.stopPropagation();
-    
-    // Create 3-5 hearts with gentle velocities
+
     const heartCount = 3 + Math.floor(Math.random() * 3);
     const newHearts = Array.from({ length: heartCount }, (_, i) => ({
       id: heartIdCounter + i,
-      x: Math.random() * 30 - 15, // Horizontal spread: -15 to 15
-      initialVelocity: 15 + Math.random() * 10, // Gentle rise: 15-25px (half button height)
-      rotation: Math.random() * 40 - 20, // Slight rotation: -20 to 20 degrees
+      x: Math.random() * 30 - 15,
+      initialVelocity: 15 + Math.random() * 10,
+      rotation: Math.random() * 40 - 20,
     }));
-    
+
     setHearts(prev => [...prev, ...newHearts]);
     setHeartIdCounter(prev => prev + heartCount);
-    
-    // Remove hearts after animation
+
     setTimeout(() => {
       setHearts(prev => prev.filter(h => !newHearts.find(nh => nh.id === h.id)));
     }, 1800);
-    
+
     onWater();
   };
 
@@ -63,23 +63,22 @@ function WaterButton({ onWater, isWatering, needsWater, fullWidth, compact }: Wa
         variant={needsWater ? 'default' : 'secondary'}
         data-testid="button-water"
       >
-        {isWatering ? (compact ? '...' : 'Watering...') : (compact ? 'Water' : 'Water Plant')}
+        {isWatering ? '...' : t('plant.water')}
       </Button>
       <AnimatePresence>
         {hearts.map(heart => (
           <motion.div
             key={heart.id}
             initial={{ opacity: 1, y: 0, x: heart.x, scale: 0.5, rotate: 0 }}
-            animate={{ 
+            animate={{
               opacity: [1, 1, 0.9, 0.6, 0],
-              // Slow rise up, then gentle fall down
               y: [0, -heart.initialVelocity, -heart.initialVelocity - 5, 20, 40],
               x: [heart.x, heart.x * 1.1, heart.x * 1.2, heart.x * 1.2, heart.x * 1.3],
               scale: [0.5, 1, 0.95, 0.8, 0.5],
               rotate: [0, heart.rotation * 0.5, heart.rotation, heart.rotation, heart.rotation]
             }}
             exit={{ opacity: 0 }}
-            transition={{ 
+            transition={{
               duration: 1.6,
               times: [0, 0.35, 0.5, 0.75, 1],
               ease: "easeInOut",
@@ -96,6 +95,7 @@ function WaterButton({ onWater, isWatering, needsWater, fullWidth, compact }: Wa
 }
 
 export function PlantCard({ plant, onWater, isWatering, onClick, layout = 'card' }: PlantCardProps) {
+  const { t } = useTranslation();
   const lastWateredDate = startOfDay(new Date(plant.last_watered_date));
   const nextWateringDate = addDays(lastWateredDate, plant.water_frequency_days);
   const today = startOfDay(new Date());
@@ -106,15 +106,19 @@ export function PlantCard({ plant, onWater, isWatering, onClick, layout = 'card'
   const getWateringStatus = () => {
     if (isOverdue) {
       const daysOverdue = Math.floor((today.getTime() - nextWateringDate.getTime()) / (1000 * 60 * 60 * 24));
-      return { text: `Overdue by ${daysOverdue} ${daysOverdue === 1 ? 'day' : 'days'}`, shortText: `-${daysOverdue}d`, variant: 'destructive' as const };
+      return {
+        text: t('plant.overdue', { count: daysOverdue }),
+        shortText: `-${daysOverdue}`,
+        variant: 'destructive' as const
+      };
     }
     if (isDueToday) {
-      return { text: 'Due today', shortText: 'Today', variant: 'default' as const };
+      return { text: t('plant.waterToday'), shortText: t('plantDetails.today'), variant: 'default' as const };
     }
     const daysUntil = Math.ceil((nextWateringDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    return { 
-      text: `Next watering in ${formatDistanceToNow(nextWateringDate)}`,
-      shortText: `${daysUntil}d`,
+    return {
+      text: t('plant.daysLeft', { count: daysUntil }),
+      shortText: `${daysUntil}`,
       variant: 'secondary' as const
     };
   };

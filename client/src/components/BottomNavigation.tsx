@@ -1,14 +1,16 @@
+import { useTranslation } from 'react-i18next';
 import { Home, Plus, User } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { cn } from '@/lib/utils';
 
 export function BottomNavigation() {
+  const { t } = useTranslation();
   const [location, setLocation] = useLocation();
 
   const navItems = [
-    { path: '/', icon: Home, label: 'Dashboard', testId: 'nav-dashboard' },
-    { path: '/add-plant', icon: Plus, label: 'Add Plant', testId: 'nav-add-plant' },
-    { path: '/profile', icon: User, label: 'Profile', testId: 'nav-profile' },
+    { path: '/', icon: Home, labelKey: 'nav.plants', testId: 'nav-dashboard' },
+    { path: '/add-plant', icon: Plus, labelKey: 'nav.add', testId: 'nav-add-plant' },
+    { path: '/profile', icon: User, labelKey: 'nav.profile', testId: 'nav-profile' },
   ];
 
   return (
@@ -29,7 +31,7 @@ export function BottomNavigation() {
               data-testid={item.testId}
             >
               <Icon className="w-6 h-6" />
-              <span className="text-xs font-medium">{item.label}</span>
+              <span className="text-xs font-medium">{t(item.labelKey)}</span>
             </button>
           );
         })}

@@ -2,11 +2,9 @@ import { z } from "zod";
 import { pgTable, text, integer, timestamp, uuid, serial } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 
-// Users table for email authentication
+// Users table - anonymous UUID-based authentication
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
-  email: text("email").notNull().unique(),
-  password: text("password").notNull(),
   name: text("name"),
   notification_time: text("notification_time").default("09:00"),
   recovery_key: uuid("recovery_key").defaultRandom().notNull().unique(),
@@ -15,21 +13,8 @@ export const users = pgTable("users", {
 
 export type User = typeof users.$inferSelect;
 export const insertUserSchema = createInsertSchema(users)
-  .omit({ id: true, created_at: true });
+  .omit({ id: true, created_at: true, recovery_key: true });
 export type InsertUser = z.infer<typeof insertUserSchema>;
-
-// Login schema for validation
-export const loginSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-});
-
-// Register schema
-export const registerSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-  name: z.string().optional(),
-});
 
 export const plants = pgTable("plants", {
   id: uuid("id").primaryKey().defaultRandom(),

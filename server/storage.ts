@@ -1,20 +1,17 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { plants, users, pushSubscriptions, type Plant, type InsertPlant, type User, type InsertUser, type PushSubscription, type InsertPushSubscription } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
-import bcrypt from "bcryptjs";
+import { eq } from "drizzle-orm";
 
 const client = postgres(process.env.DATABASE_URL!);
 const db = drizzle(client);
 
 export interface IStorage {
   // User methods
-  createUser(user: InsertUser): Promise<User>;
-  getUserByEmail(email: string): Promise<User | null>;
+  createAnonymousUser(name?: string): Promise<User>;
   getUserById(id: number): Promise<User | null>;
   getUserByRecoveryKey(recoveryKey: string): Promise<User | null>;
   getAllUsers(): Promise<User[]>;
-  validatePassword(email: string, password: string): Promise<User | null>;
   updateUserNotificationTime(userId: number, notificationTime: string): Promise<User | null>;
   regenerateRecoveryKey(userId: number): Promise<User | null>;
   
@@ -34,21 +31,12 @@ export interface IStorage {
 
 export class DbStorage implements IStorage {
   // User methods
-  async createUser(user: InsertUser): Promise<User> {
-    const hashedPassword = await bcrypt.hash(user.password, 10);
+  async createAnonymousUser(name?: string): Promise<User> {
     const [result] = await db
       .insert(users)
-      .values({ ...user, password: hashedPassword })
+      .values({ name: name || null })
       .returning();
     return result;
-  }
-
-  async getUserByEmail(email: string): Promise<User | null> {
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(eq(users.email, email.toLowerCase()));
-    return user || null;
   }
 
   async getUserById(id: number): Promise<User | null> {
@@ -61,14 +49,6 @@ export class DbStorage implements IStorage {
 
   async getAllUsers(): Promise<User[]> {
     return await db.select().from(users);
-  }
-
-  async validatePassword(email: string, password: string): Promise<User | null> {
-    const user = await this.getUserByEmail(email);
-    if (!user) return null;
-    
-    const isValid = await bcrypt.compare(password, user.password);
-    return isValid ? user : null;
   }
 
   async updateUserNotificationTime(userId: number, notificationTime: string): Promise<User | null> {

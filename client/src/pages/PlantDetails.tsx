@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { queryClient, apiRequest } from '@/lib/queryClient';
-import { ArrowLeft, MapPin, Droplets, Calendar, Trash2, Sprout, Shovel, Scissors, Settings, X, Check } from 'lucide-react';
+import { ArrowLeft, MapPin, Droplets, Calendar, Trash2, Sprout, Shovel, Scissors, Settings, X, Check, Pencil } from 'lucide-react';
 import { format, addDays, addMonths, formatDistanceToNow } from 'date-fns';
 import {
   AlertDialog,
@@ -42,6 +42,7 @@ export default function PlantDetails() {
   const { t } = useTranslation();
   const [isEditingSettings, setIsEditingSettings] = useState(false);
   const [editNotes, setEditNotes] = useState<string | null>(null);
+  const [editName, setEditName] = useState<string | null>(null);
   
   // Edit form state
   const [waterFrequency, setWaterFrequency] = useState<number>(7);
@@ -227,6 +228,25 @@ export default function PlantDetails() {
     },
   });
 
+  const updateNameMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const res = await apiRequest('PATCH', `/api/plants/${id}`, { name });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/plants', id] });
+      queryClient.invalidateQueries({ queryKey: ['/api/plants'] });
+      setEditName(null);
+    },
+    onError: (error: any) => {
+      toast({
+        title: t('common.error'),
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
   const openSettingsDialog = () => {
     if (plant) {
       setWaterFrequency(plant.water_frequency_days);
@@ -304,9 +324,33 @@ export default function PlantDetails() {
           />
         </div>
         <CardHeader>
-          <CardTitle className="text-3xl" data-testid="text-plant-name">
-            {plant.name}
-          </CardTitle>
+          {editName !== null ? (
+            <div className="flex items-center gap-2">
+              <Input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="text-2xl font-bold h-auto py-1"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && editName.trim()) updateNameMutation.mutate(editName.trim());
+                  if (e.key === 'Escape') setEditName(null);
+                }}
+              />
+              <Button variant="ghost" size="icon" onClick={() => editName.trim() && updateNameMutation.mutate(editName.trim())} disabled={updateNameMutation.isPending}>
+                <Check className="w-4 h-4" />
+              </Button>
+              <Button variant="ghost" size="icon" onClick={() => setEditName(null)}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+          ) : (
+            <CardTitle className="text-3xl flex items-center gap-2" data-testid="text-plant-name">
+              {plant.name}
+              <Button variant="ghost" size="icon" onClick={() => setEditName(plant.name)} className="h-8 w-8">
+                <Pencil className="w-4 h-4" />
+              </Button>
+            </CardTitle>
+          )}
           <div className="flex flex-wrap gap-2 pt-2">
             <Badge variant="secondary">
               <MapPin className="w-3 h-3 mr-1" />

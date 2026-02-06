@@ -15,7 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { useToast } from '@/hooks/use-toast';
 import { queryClient } from '@/lib/queryClient';
-import { ArrowLeft, Upload, X, CalendarIcon } from 'lucide-react';
+import { ArrowLeft, Upload, X, CalendarIcon, Droplets, Sprout, Shovel, Scissors } from 'lucide-react';
 import { useState } from 'react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -280,7 +280,7 @@ export default function AddPlant() {
                 name="water_frequency_days"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('addPlant.wateringLabel')}</FormLabel>
+                    <FormLabel className="flex items-center gap-2"><Droplets className="w-4 h-4 text-primary" />{t('addPlant.wateringLabel')}</FormLabel>
                     <FormControl>
                       <Input
                         type="number"
@@ -300,7 +300,7 @@ export default function AddPlant() {
                 name="last_watered_date"
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
-                    <FormLabel>{t('addPlant.lastWateredLabel')}</FormLabel>
+                    <FormLabel className="flex items-center gap-2"><Droplets className="w-4 h-4 text-primary" />{t('addPlant.lastWateredLabel')}</FormLabel>
                     <Popover>
                       <PopoverTrigger asChild>
                         <FormControl>
@@ -351,7 +351,7 @@ export default function AddPlant() {
                     name="fertilize_frequency_days"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{t('addPlant.fertilizing')}</FormLabel>
+                        <FormLabel className="flex items-center gap-2"><Sprout className="w-4 h-4 text-green-600" />{t('addPlant.fertilizing')}</FormLabel>
                         <FormControl>
                           <Input
                             type="number"
@@ -373,7 +373,7 @@ export default function AddPlant() {
                     name="last_fertilized_date"
                     render={({ field }) => (
                       <FormItem className="flex flex-col">
-                        <FormLabel>{t('addPlant.lastFertilized')}</FormLabel>
+                        <FormLabel className="flex items-center gap-2"><Sprout className="w-4 h-4 text-green-600" />{t('addPlant.lastFertilized')}</FormLabel>
                         <Popover>
                           <PopoverTrigger asChild>
                             <FormControl>
@@ -416,7 +416,7 @@ export default function AddPlant() {
                     name="repot_frequency_months"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{t('addPlant.repotting')}</FormLabel>
+                        <FormLabel className="flex items-center gap-2"><Shovel className="w-4 h-4 text-amber-600" />{t('addPlant.repotting')}</FormLabel>
                         <FormControl>
                           <Input
                             type="number"
@@ -438,7 +438,7 @@ export default function AddPlant() {
                     name="last_repotted_date"
                     render={({ field }) => (
                       <FormItem className="flex flex-col">
-                        <FormLabel>{t('addPlant.lastRepotted')}</FormLabel>
+                        <FormLabel className="flex items-center gap-2"><Shovel className="w-4 h-4 text-amber-600" />{t('addPlant.lastRepotted')}</FormLabel>
                         <Popover>
                           <PopoverTrigger asChild>
                             <FormControl>
@@ -481,7 +481,7 @@ export default function AddPlant() {
                     name="prune_frequency_months"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{t('addPlant.pruning')}</FormLabel>
+                        <FormLabel className="flex items-center gap-2"><Scissors className="w-4 h-4 text-purple-600" />{t('addPlant.pruning')}</FormLabel>
                         <FormControl>
                           <Input
                             type="number"
@@ -503,7 +503,7 @@ export default function AddPlant() {
                     name="last_pruned_date"
                     render={({ field }) => (
                       <FormItem className="flex flex-col">
-                        <FormLabel>{t('addPlant.lastPruned')}</FormLabel>
+                        <FormLabel className="flex items-center gap-2"><Scissors className="w-4 h-4 text-purple-600" />{t('addPlant.lastPruned')}</FormLabel>
                         <Popover>
                           <PopoverTrigger asChild>
                             <FormControl>

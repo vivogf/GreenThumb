@@ -1,6 +1,19 @@
 self.addEventListener('push', function(event) {
-  const options = {
-    body: event.data ? event.data.text() : 'Time to water your plants!',
+  var title = 'GreenThumb 💚';
+  var body = 'Ваши цветочки ждут вашей заботы! 🌿';
+
+  if (event.data) {
+    try {
+      var data = event.data.json();
+      title = data.title || title;
+      body = data.body || body;
+    } catch (e) {
+      body = event.data.text() || body;
+    }
+  }
+
+  var options = {
+    body: body,
     icon: '/favicon.png',
     badge: '/favicon.png',
     vibrate: [100, 50, 100],
@@ -11,17 +24,17 @@ self.addEventListener('push', function(event) {
     actions: [
       {
         action: 'open',
-        title: 'Open App'
+        title: 'Открыть'
       },
       {
         action: 'close',
-        title: 'Dismiss'
+        title: 'Закрыть'
       }
     ]
   };
 
   event.waitUntil(
-    self.registration.showNotification('GreenThumb', options)
+    self.registration.showNotification(title, options)
   );
 });
 

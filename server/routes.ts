@@ -301,8 +301,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await webpush.sendNotification(
         pushSubscription,
         JSON.stringify({
-          title: "GreenThumb Test",
-          body: "Push notifications are working!",
+          title: "GreenThumb 💚",
+          body: "Уведомления работают! 🌿",
         })
       );
       
@@ -413,9 +413,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           };
           
           const message = messages.join(" | ");
-          
+
           try {
-            await webpush.sendNotification(pushSubscription, message);
+            await webpush.sendNotification(pushSubscription, JSON.stringify({
+              title: "Ваши цветочки ждут заботы 💚",
+              body: message,
+            }));
             notificationsSent.push(`User ${subscription.user_id}: ${message}`);
           } catch (err: any) {
             console.error(`Failed to send notification to user ${subscription.user_id}:`, err);

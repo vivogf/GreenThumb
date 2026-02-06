@@ -16,3 +16,6 @@ vite.config.ts.*
 # Replit specific
 .replit
 .config/
+
+# Claude internal docs (contains infrastructure details)
+CLAUDE.md

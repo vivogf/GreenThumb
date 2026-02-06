@@ -5,9 +5,9 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Plant } from '@shared/schema';
 import { addDays, startOfDay } from 'date-fns';
-import { MapPin, Droplets, Heart } from 'lucide-react';
+import { MapPin, Droplets, Heart, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 
 export type LayoutMode = 'card' | 'compact';
 
@@ -29,64 +29,72 @@ interface WaterButtonProps {
 
 function WaterButton({ onWater, isWatering, needsWater, fullWidth, compact }: WaterButtonProps) {
   const { t } = useTranslation();
-  const [hearts, setHearts] = useState<{ id: number; x: number; initialVelocity: number; rotation: number }[]>([]);
+  const [hearts, setHearts] = useState<{ id: number; x: number; initialVelocity: number; rotation: number; size: number }[]>([]);
   const [heartIdCounter, setHeartIdCounter] = useState(0);
+  const [justWatered, setJustWatered] = useState(false);
+  const waterTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
   const handleWater = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (justWatered) return;
 
-    const heartCount = 3 + Math.floor(Math.random() * 3);
+    const heartCount = 8 + Math.floor(Math.random() * 5);
     const newHearts = Array.from({ length: heartCount }, (_, i) => ({
       id: heartIdCounter + i,
-      x: Math.random() * 30 - 15,
-      initialVelocity: 15 + Math.random() * 10,
-      rotation: Math.random() * 40 - 20,
+      x: Math.random() * 80 - 40,
+      initialVelocity: 40 + Math.random() * 30,
+      rotation: Math.random() * 60 - 30,
+      size: [4, 5, 5, 6][Math.floor(Math.random() * 4)],
     }));
 
     setHearts(prev => [...prev, ...newHearts]);
     setHeartIdCounter(prev => prev + heartCount);
+    setJustWatered(true);
 
     setTimeout(() => {
       setHearts(prev => prev.filter(h => !newHearts.find(nh => nh.id === h.id)));
-    }, 1800);
+    }, 2200);
 
-    onWater();
+    waterTimeoutRef.current = setTimeout(() => {
+      onWater();
+      setJustWatered(false);
+    }, 1500);
   };
 
   return (
     <div className="relative inline-block">
       <Button
         onClick={handleWater}
-        disabled={isWatering}
+        disabled={isWatering || justWatered}
         className={fullWidth ? 'w-full' : ''}
         size={compact ? 'sm' : 'default'}
-        variant={needsWater ? 'default' : 'secondary'}
+        variant={needsWater && !justWatered ? 'default' : 'secondary'}
         data-testid="button-water"
       >
-        {isWatering ? '...' : t('plant.water')}
+        {justWatered ? <Check className="w-4 h-4" /> : isWatering ? '...' : t('plant.water')}
       </Button>
       <AnimatePresence>
         {hearts.map(heart => (
           <motion.div
             key={heart.id}
-            initial={{ opacity: 1, y: 0, x: heart.x, scale: 0.5, rotate: 0 }}
+            initial={{ opacity: 1, y: 0, x: heart.x * 0.3, scale: 0.3, rotate: 0 }}
             animate={{
-              opacity: [1, 1, 0.9, 0.6, 0],
-              y: [0, -heart.initialVelocity, -heart.initialVelocity - 5, 20, 40],
-              x: [heart.x, heart.x * 1.1, heart.x * 1.2, heart.x * 1.2, heart.x * 1.3],
-              scale: [0.5, 1, 0.95, 0.8, 0.5],
-              rotate: [0, heart.rotation * 0.5, heart.rotation, heart.rotation, heart.rotation]
+              opacity: [1, 1, 0.9, 0.5, 0],
+              y: [0, -heart.initialVelocity, -heart.initialVelocity * 1.1, -heart.initialVelocity * 0.5, 10],
+              x: [heart.x * 0.3, heart.x * 0.8, heart.x, heart.x * 1.1, heart.x * 1.2],
+              scale: [0.3, 1.1, 1, 0.7, 0.3],
+              rotate: [0, heart.rotation * 0.5, heart.rotation, heart.rotation * 1.2, heart.rotation * 1.5]
             }}
             exit={{ opacity: 0 }}
             transition={{
-              duration: 1.6,
-              times: [0, 0.35, 0.5, 0.75, 1],
-              ease: "easeInOut",
+              duration: 2,
+              times: [0, 0.3, 0.5, 0.75, 1],
+              ease: "easeOut",
             }}
             className="absolute top-0 left-1/2 pointer-events-none"
-            style={{ marginLeft: '-10px' }}
+            style={{ marginLeft: `-${heart.size * 2}px` }}
           >
-            <Heart className="w-5 h-5 fill-green-500 text-green-500 drop-shadow-sm" />
+            <Heart className={`w-${heart.size} h-${heart.size} fill-green-500 text-green-500 drop-shadow-md`} />
           </motion.div>
         ))}
       </AnimatePresence>

@@ -8,6 +8,7 @@ import { addDays, startOfDay } from 'date-fns';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { Sprout, LayoutGrid, LayoutList, Search, Droplets, CalendarClock } from 'lucide-react';
+import { motion, LayoutGroup } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -78,7 +79,6 @@ export default function Dashboard() {
     onSuccess: () => {
       toast({
         title: t('plant.watered'),
-        description: t('plant.watered'),
       });
     },
     onSettled: () => {
@@ -274,47 +274,51 @@ export default function Dashboard() {
         )}
       </div>
 
-      {needsWater.length > 0 && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-destructive animate-pulse"></div>
-            <h2 className="text-xl font-medium text-foreground">{t('dashboard.needsWater')}</h2>
+      <LayoutGroup>
+        {needsWater.length > 0 && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-destructive animate-pulse"></div>
+              <h2 className="text-xl font-medium text-foreground">{t('dashboard.needsWater')}</h2>
+            </div>
+            <div className={layout === 'compact' ? 'space-y-2' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'} data-testid="section-needs-water">
+              {needsWater.map((plant) => (
+                <motion.div key={plant.id} layoutId={plant.id} layout transition={{ type: "spring", stiffness: 200, damping: 25 }}>
+                  <PlantCard
+                    plant={plant}
+                    onWater={handleWater}
+                    isWatering={wateringPlantId === plant.id}
+                    onClick={() => handlePlantClick(plant)}
+                    layout={layout}
+                  />
+                </motion.div>
+              ))}
+            </div>
           </div>
-          <div className={layout === 'compact' ? 'space-y-2' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'} data-testid="section-needs-water">
-            {needsWater.map((plant) => (
-              <PlantCard
-                key={plant.id}
-                plant={plant}
-                onWater={handleWater}
-                isWatering={wateringPlantId === plant.id}
-                onClick={() => handlePlantClick(plant)}
-                layout={layout}
-              />
-            ))}
-          </div>
-        </div>
-      )}
+        )}
 
-      {allGood.length > 0 && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-primary"></div>
-            <h2 className="text-xl font-medium text-foreground">{t('dashboard.healthy')}</h2>
+        {allGood.length > 0 && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-primary"></div>
+              <h2 className="text-xl font-medium text-foreground">{t('dashboard.healthy')}</h2>
+            </div>
+            <div className={layout === 'compact' ? 'space-y-2' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'} data-testid="section-all-good">
+              {allGood.map((plant) => (
+                <motion.div key={plant.id} layoutId={plant.id} layout transition={{ type: "spring", stiffness: 200, damping: 25 }}>
+                  <PlantCard
+                    plant={plant}
+                    onWater={handleWater}
+                    isWatering={wateringPlantId === plant.id}
+                    onClick={() => handlePlantClick(plant)}
+                    layout={layout}
+                  />
+                </motion.div>
+              ))}
+            </div>
           </div>
-          <div className={layout === 'compact' ? 'space-y-2' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'} data-testid="section-all-good">
-            {allGood.map((plant) => (
-              <PlantCard
-                key={plant.id}
-                plant={plant}
-                onWater={handleWater}
-                isWatering={wateringPlantId === plant.id}
-                onClick={() => handlePlantClick(plant)}
-                layout={layout}
-              />
-            ))}
-          </div>
-        </div>
-      )}
+        )}
+      </LayoutGroup>
     </div>
   );
 }

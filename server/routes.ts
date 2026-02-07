@@ -282,14 +282,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Send test notification
   app.post("/api/push/test", requireAuth, async (req: Request, res) => {
+    const userId = req.session.userId!;
     try {
-      const userId = req.session.userId!;
       const subscription = await storage.getPushSubscriptionByUserId(userId);
-      
+
       if (!subscription) {
-        return res.status(400).json({ error: "No subscription found" });
+        return res.status(400).json({ error: "no_subscription" });
       }
-      
+
       const pushSubscription = {
         endpoint: subscription.endpoint,
         keys: {
@@ -297,7 +297,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           auth: subscription.auth,
         },
       };
-      
+
       await webpush.sendNotification(
         pushSubscription,
         JSON.stringify({
@@ -305,10 +305,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           body: "Уведомления работают! 🌿",
         })
       );
-      
+
       res.json({ success: true });
     } catch (error: any) {
       console.error("Test notification error:", error);
+      // 410 Gone or 404 = subscription expired/invalid, 401/403 = VAPID mismatch
+      if (error.statusCode === 410 || error.statusCode === 404 || error.statusCode === 401 || error.statusCode === 403) {
+        await storage.deletePushSubscription(userId);
+        return res.status(400).json({ error: "subscription_expired" });
+      }
       res.status(400).json({ error: error.message });
     }
   });

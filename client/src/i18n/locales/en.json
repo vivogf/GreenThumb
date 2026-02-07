@@ -208,7 +208,12 @@
     "copied": "Copied!",
     "copiedHint": "Recovery key copied to clipboard.",
     "testSent": "Test sent",
-    "testSentHint": "Check for a notification!"
+    "testSentHint": "Check for a notification!",
+    "subscriptionExpired": "Subscription expired. Turn notifications off and on again.",
+    "testFailed": "Failed to send test notification. Try again later.",
+    "pushNotSupported": "Push notifications are not supported in this browser.",
+    "permissionDenied": "Notification permission was denied.",
+    "notificationError": "Failed to set up notifications."
   },
   "nav": {
     "plants": "Plants",

@@ -78,7 +78,7 @@ export default function Profile() {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
       toast({
         title: t('common.error'),
-        description: t('common.error'),
+        description: t('profile.pushNotSupported'),
         variant: 'destructive',
       });
       return;
@@ -92,7 +92,7 @@ export default function Profile() {
         if (permission !== 'granted') {
           toast({
             title: t('common.error'),
-            description: t('common.error'),
+            description: t('profile.permissionDenied'),
             variant: 'destructive',
           });
           setIsLoading(false);
@@ -148,7 +148,7 @@ export default function Profile() {
       console.error('Notification toggle error:', error);
       toast({
         title: t('common.error'),
-        description: t('common.error'),
+        description: t('profile.notificationError'),
         variant: 'destructive',
       });
     }
@@ -169,16 +169,26 @@ export default function Profile() {
           description: t('profile.testSentHint'),
         });
       } else {
-        toast({
-          title: t('common.error'),
-          description: t('common.error'),
-          variant: 'destructive',
-        });
+        const data = await response.json().catch(() => ({}));
+        if (data.error === 'subscription_expired' || data.error === 'no_subscription') {
+          setNotificationsEnabled(false);
+          toast({
+            title: t('common.error'),
+            description: t('profile.subscriptionExpired'),
+            variant: 'destructive',
+          });
+        } else {
+          toast({
+            title: t('common.error'),
+            description: t('profile.testFailed'),
+            variant: 'destructive',
+          });
+        }
       }
     } catch (error) {
       toast({
         title: t('common.error'),
-        description: t('common.error'),
+        description: t('profile.testFailed'),
         variant: 'destructive',
       });
     }

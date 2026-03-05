@@ -52,10 +52,11 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'greenthumb-secret-key-development',
   resave: false,
   saveUninitialized: false,
+  rolling: true,
   cookie: {
     secure: 'auto',
     httpOnly: true,
-    maxAge: 7 * 24 * 60 * 60 * 1000,
+    maxAge: 30 * 24 * 60 * 60 * 1000,
     sameSite: 'lax',
   },
   store: new PgStore({

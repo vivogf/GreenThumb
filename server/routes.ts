@@ -420,10 +420,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const message = messages.join(" | ");
 
           try {
-            await webpush.sendNotification(pushSubscription, JSON.stringify({
-              title: "Ваши цветочки ждут заботы 💚",
-              body: message,
-            }));
+            await webpush.sendNotification(
+              pushSubscription,
+              JSON.stringify({
+                title: "Ваши цветочки ждут заботы 💚",
+                body: message,
+              }),
+              {
+                TTL: 86400,
+                urgency: 'high',
+                topic: 'plant-care',
+              }
+            );
             notificationsSent.push(`User ${subscription.user_id}: ${message}`);
           } catch (err: any) {
             console.error(`Failed to send notification to user ${subscription.user_id}:`, err);

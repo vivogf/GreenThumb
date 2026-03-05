@@ -17,6 +17,8 @@ self.addEventListener('push', function(event) {
     icon: '/favicon.png',
     badge: '/favicon.png',
     vibrate: [100, 50, 100],
+    tag: 'plant-care',
+    renotify: true,
     data: {
       dateOfArrival: Date.now(),
       primaryKey: 1

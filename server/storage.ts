@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { plants, users, pushSubscriptions, type Plant, type InsertPlant, type User, type InsertUser, type PushSubscription, type InsertPushSubscription } from "@shared/schema";
+import { plants, users, pushSubscriptions, expoPushSubscriptions, type Plant, type InsertPlant, type User, type InsertUser, type PushSubscription, type InsertPushSubscription, type ExpoPushSubscription } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
 const client = postgres(process.env.DATABASE_URL!);
@@ -22,11 +22,17 @@ export interface IStorage {
   deletePlant(id: string): Promise<void>;
   getAllPlants(): Promise<Plant[]>;
   
-  // Push subscription methods
+  // Push subscription methods (web push)
   savePushSubscription(subscription: InsertPushSubscription): Promise<PushSubscription>;
   getPushSubscriptionByUserId(userId: number): Promise<PushSubscription | null>;
   deletePushSubscription(userId: number): Promise<void>;
   getAllPushSubscriptions(): Promise<PushSubscription[]>;
+
+  // Expo push subscription methods (mobile)
+  saveExpoPushSubscription(userId: number, token: string): Promise<ExpoPushSubscription>;
+  getExpoPushSubscriptionByUserId(userId: number): Promise<string | null>;
+  deleteExpoPushSubscription(userId: number): Promise<void>;
+  getAllExpoPushSubscriptions(): Promise<{ user_id: number; expo_push_token: string }[]>;
 }
 
 export class DbStorage implements IStorage {
@@ -136,6 +142,34 @@ export class DbStorage implements IStorage {
 
   async getAllPushSubscriptions(): Promise<PushSubscription[]> {
     return await db.select().from(pushSubscriptions);
+  }
+
+  // Expo push subscription methods (mobile)
+  async saveExpoPushSubscription(userId: number, token: string): Promise<ExpoPushSubscription> {
+    // Delete existing token for this user first (upsert pattern)
+    await db.delete(expoPushSubscriptions).where(eq(expoPushSubscriptions.user_id, userId));
+    const [result] = await db
+      .insert(expoPushSubscriptions)
+      .values({ user_id: userId, expo_push_token: token })
+      .returning();
+    return result;
+  }
+
+  async getExpoPushSubscriptionByUserId(userId: number): Promise<string | null> {
+    const [sub] = await db
+      .select()
+      .from(expoPushSubscriptions)
+      .where(eq(expoPushSubscriptions.user_id, userId));
+    return sub?.expo_push_token ?? null;
+  }
+
+  async deleteExpoPushSubscription(userId: number): Promise<void> {
+    await db.delete(expoPushSubscriptions).where(eq(expoPushSubscriptions.user_id, userId));
+  }
+
+  async getAllExpoPushSubscriptions(): Promise<{ user_id: number; expo_push_token: string }[]> {
+    const rows = await db.select().from(expoPushSubscriptions);
+    return rows.map((r) => ({ user_id: r.user_id, expo_push_token: r.expo_push_token }));
   }
 }
 

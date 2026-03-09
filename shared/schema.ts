@@ -71,3 +71,13 @@ export type PushSubscription = typeof pushSubscriptions.$inferSelect;
 export const insertPushSubscriptionSchema = createInsertSchema(pushSubscriptions)
   .omit({ id: true, created_at: true });
 export type InsertPushSubscription = z.infer<typeof insertPushSubscriptionSchema>;
+
+// Expo Push Subscriptions table for mobile (React Native) push notifications
+export const expoPushSubscriptions = pgTable("expo_push_subscriptions", {
+  id: serial("id").primaryKey(),
+  user_id: integer("user_id").notNull(),
+  expo_push_token: text("expo_push_token").notNull(),
+  created_at: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type ExpoPushSubscription = typeof expoPushSubscriptions.$inferSelect;

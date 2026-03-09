@@ -3,7 +3,10 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertPlantSchema } from "@shared/schema";
 import webpush from "web-push";
+import { Expo } from "expo-server-sdk";
 import { addDays, isToday, isBefore, startOfDay } from "date-fns";
+
+const expo = new Expo();
 
 // Configure web-push with VAPID keys
 if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
@@ -12,6 +15,13 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
     process.env.VAPID_PUBLIC_KEY,
     process.env.VAPID_PRIVATE_KEY
   );
+}
+
+function toDateString(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -187,7 +197,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await Promise.all(
         plantsNeedingWater.map((plant) =>
           storage.updatePlant(plant.id, {
-            last_watered_date: new Date().toISOString(),
+            last_watered_date: toDateString(new Date()),
           })
         )
       );
@@ -219,7 +229,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await Promise.all(
         plantsNeedingWater.map((plant) =>
           storage.updatePlant(plant.id, {
-            last_watered_date: yesterday.toISOString(),
+            last_watered_date: toDateString(yesterday),
           })
         )
       );
@@ -271,6 +281,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.session.userId!;
       const subscription = await storage.getPushSubscriptionByUserId(userId);
       res.json({ subscribed: !!subscription });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Expo push subscription endpoints (mobile app)
+  app.post("/api/push/subscribe-expo", requireAuth, async (req: Request, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { expo_push_token } = req.body;
+      if (!expo_push_token || !Expo.isExpoPushToken(expo_push_token)) {
+        return res.status(400).json({ error: "Invalid Expo push token" });
+      }
+      await storage.saveExpoPushSubscription(userId, expo_push_token);
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("Expo subscribe error:", error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/push/subscribe-expo", requireAuth, async (req: Request, res) => {
+    try {
+      const userId = req.session.userId!;
+      await storage.deleteExpoPushSubscription(userId);
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("Expo unsubscribe error:", error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/push/expo-subscription", requireAuth, async (req: Request, res) => {
+    try {
+      const userId = req.session.userId!;
+      const token = await storage.getExpoPushSubscriptionByUserId(userId);
+      res.json({ subscribed: !!token });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
@@ -443,6 +490,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
+      // Also send Expo push notifications to mobile subscribers
+      const expoSubs = await storage.getAllExpoPushSubscriptions();
+      const expoMessages: Parameters<typeof expo.sendPushNotificationsAsync>[0] = [];
+
+      for (const sub of expoSubs) {
+        if (!Expo.isExpoPushToken(sub.expo_push_token)) continue;
+
+        const userPlants = plants.filter(p => p.user_id === String(sub.user_id));
+        const careParts: string[] = [];
+
+        for (const plant of userPlants) {
+          const lastWatered = new Date(plant.last_watered_date);
+          const nextWaterDate = addDays(lastWatered, plant.water_frequency_days);
+          if (isToday(nextWaterDate) || isBefore(nextWaterDate, today)) {
+            careParts.push(`💧 ${plant.name}`);
+          }
+          if (plant.fertilize_frequency_days && plant.last_fertilized_date) {
+            const nextDate = addDays(new Date(plant.last_fertilized_date), plant.fertilize_frequency_days);
+            if (isToday(nextDate) || isBefore(nextDate, today)) careParts.push(`🌿 ${plant.name}`);
+          }
+          if (plant.repot_frequency_months && plant.last_repotted_date) {
+            const nextDate = new Date(plant.last_repotted_date);
+            nextDate.setMonth(nextDate.getMonth() + plant.repot_frequency_months);
+            if (isToday(nextDate) || isBefore(startOfDay(nextDate), today)) careParts.push(`🪴 ${plant.name}`);
+          }
+          if (plant.prune_frequency_months && plant.last_pruned_date) {
+            const nextDate = new Date(plant.last_pruned_date);
+            nextDate.setMonth(nextDate.getMonth() + plant.prune_frequency_months);
+            if (isToday(nextDate) || isBefore(startOfDay(nextDate), today)) careParts.push(`✂️ ${plant.name}`);
+          }
+        }
+
+        if (careParts.length > 0) {
+          expoMessages.push({
+            to: sub.expo_push_token,
+            sound: 'default',
+            title: 'Ваши цветочки ждут заботы 💚',
+            body: careParts.slice(0, 4).join(', '),
+          });
+        }
+      }
+
+      if (expoMessages.length > 0) {
+        const chunks = expo.chunkPushNotifications(expoMessages);
+        for (const chunk of chunks) {
+          try {
+            const tickets = await expo.sendPushNotificationsAsync(chunk);
+            tickets.forEach((ticket, i) => {
+              if (ticket.status === 'error') {
+                console.error(`Expo push error for token ${chunk[i].to}:`, ticket.message);
+                if (ticket.details?.error === 'DeviceNotRegistered') {
+                  // Token is invalid — clean up
+                  const sub = expoSubs.find(s => s.expo_push_token === chunk[i].to);
+                  if (sub) storage.deleteExpoPushSubscription(sub.user_id);
+                }
+              }
+            });
+          } catch (err) {
+            console.error('Expo chunk send error:', err);
+          }
+        }
+        notificationsSent.push(`Expo: sent to ${expoMessages.length} mobile subscriber(s)`);
+      }
+
       res.json({ success: true, notificationsSent });
     } catch (error: any) {
       console.error("Check plants error:", error);

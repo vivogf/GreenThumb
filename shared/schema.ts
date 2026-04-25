@@ -77,6 +77,7 @@ export const expoPushSubscriptions = pgTable("expo_push_subscriptions", {
   id: serial("id").primaryKey(),
   user_id: integer("user_id").notNull(),
   expo_push_token: text("expo_push_token").notNull(),
+  language: text("language").notNull().default("ru"),
   created_at: timestamp("created_at").defaultNow().notNull(),
 });
 

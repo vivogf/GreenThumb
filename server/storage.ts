@@ -29,11 +29,10 @@ export interface IStorage {
   getAllPushSubscriptions(): Promise<PushSubscription[]>;
 
   // Expo push subscription methods (mobile)
-  saveExpoPushSubscription(userId: number, token: string): Promise<ExpoPushSubscription>;
+  saveExpoPushSubscription(userId: number, token: string, language?: string): Promise<ExpoPushSubscription>;
   getExpoPushSubscriptionByUserId(userId: number): Promise<string | null>;
   deleteExpoPushSubscription(userId: number): Promise<void>;
-  getAllExpoPushSubscriptions(): Promise<{ user_id: number; expo_push_token: string }[]>;
-}
+  getAllExpoPushSubscriptions(): Promise<{ user_id: number; expo_push_token: string; language: string }[]>;}
 
 export class DbStorage implements IStorage {
   // User methods
@@ -145,12 +144,12 @@ export class DbStorage implements IStorage {
   }
 
   // Expo push subscription methods (mobile)
-  async saveExpoPushSubscription(userId: number, token: string): Promise<ExpoPushSubscription> {
+  async saveExpoPushSubscription(userId: number, token: string, language: string = 'ru'): Promise<ExpoPushSubscription> {
     // Delete existing token for this user first (upsert pattern)
     await db.delete(expoPushSubscriptions).where(eq(expoPushSubscriptions.user_id, userId));
     const [result] = await db
       .insert(expoPushSubscriptions)
-      .values({ user_id: userId, expo_push_token: token })
+      .values({ user_id: userId, expo_push_token: token, language })
       .returning();
     return result;
   }

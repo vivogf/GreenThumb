@@ -290,11 +290,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/push/subscribe-expo", requireAuth, async (req: Request, res) => {
     try {
       const userId = req.session.userId!;
-      const { expo_push_token } = req.body;
+      const { expo_push_token, language } = req.body;
       if (!expo_push_token || !Expo.isExpoPushToken(expo_push_token)) {
         return res.status(400).json({ error: "Invalid Expo push token" });
       }
-      await storage.saveExpoPushSubscription(userId, expo_push_token);
+      const lang = language === 'en' || language === 'ru' ? language : 'ru';
+      await storage.saveExpoPushSubscription(userId, expo_push_token, lang);
       res.json({ ok: true });
     } catch (error: any) {
       console.error("Expo subscribe error:", error);
@@ -366,6 +367,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Check plants and send notifications (protected with API key for cron jobs)
+    /**
+   * Format a notification body line for the count of plants needing care.
+   * Russian uses 3-form pluralization; English uses singular/plural.
+   */
+  function plantCountText(count: number, lang: 'ru' | 'en' = 'ru'): string {
+    if (lang === 'en') {
+      return `${count} ${count === 1 ? 'plant' : 'plants'} need your attention 🌿`;
+    }
+    const mod10 = count % 10;
+    const mod100 = count % 100;
+    let word: string;
+    if (mod10 === 1 && mod100 !== 11) word = 'растение';
+    else if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) word = 'растения';
+    else word = 'растений';
+    return `${count} ${word} ждут вашего внимания 🌿`;
+  }
+
+  function notifTitle(lang: 'ru' | 'en' = 'ru'): string {
+    return lang === 'en' ? 'Your plants need care 💚' : 'Ваши цветочки ждут заботы 💚';
+  }
+  /**
+   * Check if user's notification_time (HH:MM, Moscow) falls within the last
+   * `windowMinutes` before now. Server is UTC; users express notification_time
+   * in Moscow (UTC+3). Handles midnight wraparound.
+   */
+  function isInNotificationWindow(
+    userTime: string | null | undefined,
+    windowMinutes = 5,
+  ): boolean {
+    if (!userTime) return false;
+    const match = userTime.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return false;
+    const userMinutes = parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+
+    const now = new Date();
+    const mskNowMinutes =
+      (now.getUTCHours() * 60 + now.getUTCMinutes() + 3 * 60) % 1440;
+    const windowStart = mskNowMinutes - windowMinutes;
+
+    if (windowStart < 0) {
+      // Window crosses midnight (e.g. mskNow=00:02, window=[23:57, 00:02])
+      return userMinutes >= windowStart + 1440 || userMinutes <= mskNowMinutes;
+    }
+    return userMinutes >= windowStart && userMinutes <= mskNowMinutes;
+  }
   app.post("/api/push/check-plants", async (req: Request, res) => {
     // Require either authentication or a secret API key
     const apiKey = req.headers['x-api-key'];
@@ -378,12 +424,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const plants = await storage.getAllPlants();
       const subscriptions = await storage.getAllPushSubscriptions();
       const users = await storage.getAllUsers();
+      const expoSubs = await storage.getAllExpoPushSubscriptions();
+      const expoUserIds = new Set(expoSubs.map(s => s.user_id));
       const today = startOfDay(new Date());
       
       const notificationsSent: string[] = [];
       
       for (const subscription of subscriptions) {
         const user = users.find(u => u.id === subscription.user_id);
+	if (!isInNotificationWindow(user?.notification_time)) continue;
+	if (expoUserIds.has(subscription.user_id)) continue;
         const userPlants = plants.filter(p => p.user_id === String(subscription.user_id));
         
         const careNeeded: { water: string[]; fertilize: string[]; repot: string[]; prune: string[] } = {
@@ -491,11 +541,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Also send Expo push notifications to mobile subscribers
-      const expoSubs = await storage.getAllExpoPushSubscriptions();
       const expoMessages: Parameters<typeof expo.sendPushNotificationsAsync>[0] = [];
 
       for (const sub of expoSubs) {
         if (!Expo.isExpoPushToken(sub.expo_push_token)) continue;
+	
+        const user = users.find(u => u.id === sub.user_id);
+        if (!isInNotificationWindow(user?.notification_time)) continue;
 
         const userPlants = plants.filter(p => p.user_id === String(sub.user_id));
         const careParts: string[] = [];
@@ -523,11 +575,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         if (careParts.length > 0) {
+          const plantsNeedingCare = new Set(
+            careParts.map(p => p.replace(/^[^\s]+\s+/, ''))
+          );
+          const lang: 'ru' | 'en' = sub.language === 'en' ? 'en' : 'ru';
           expoMessages.push({
             to: sub.expo_push_token,
             sound: 'default',
-            title: 'Ваши цветочки ждут заботы 💚',
-            body: careParts.slice(0, 4).join(', '),
+            title: notifTitle(lang),
+            body: plantCountText(plantsNeedingCare.size, lang),
           });
         }
       }

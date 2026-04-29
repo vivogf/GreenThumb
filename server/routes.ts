@@ -406,11 +406,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       (now.getUTCHours() * 60 + now.getUTCMinutes() + 3 * 60) % 1440;
     const windowStart = mskNowMinutes - windowMinutes;
 
+    // Half-open window (windowStart, mskNow] — excluding the lower bound so
+    // a user with notification_time == windowStart only matches the *previous*
+    // tick, not this one. Without this, the */5 cron would match the same user
+    // on two consecutive ticks 5 minutes apart (the original "09:00 + 09:05"
+    // duplicate-push bug).
     if (windowStart < 0) {
-      // Window crosses midnight (e.g. mskNow=00:02, window=[23:57, 00:02])
-      return userMinutes >= windowStart + 1440 || userMinutes <= mskNowMinutes;
+      // Window crosses midnight (e.g. mskNow=00:02, window=(23:57, 00:02])
+      return userMinutes > windowStart + 1440 || userMinutes <= mskNowMinutes;
     }
-    return userMinutes >= windowStart && userMinutes <= mskNowMinutes;
+    return userMinutes > windowStart && userMinutes <= mskNowMinutes;
+  }
+
+  /**
+   * "Today" date string in Moscow time (UTC+3) as YYYY-MM-DD.
+   * Used to dedupe the daily care reminder push per user. We use Moscow time
+   * (not UTC) so the day boundary matches what the user perceives — otherwise
+   * a push at 23:30 MSK and another at 00:30 MSK would both count as "today".
+   */
+  function todayMskDateStr(): string {
+    const now = new Date();
+    const mskMs = now.getTime() + 3 * 60 * 60 * 1000;
+    const msk = new Date(mskMs);
+    const y = msk.getUTCFullYear();
+    const m = String(msk.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(msk.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   }
   app.post("/api/push/check-plants", async (req: Request, res) => {
     // Require either authentication or a secret API key
@@ -427,13 +448,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const expoSubs = await storage.getAllExpoPushSubscriptions();
       const expoUserIds = new Set(expoSubs.map(s => s.user_id));
       const today = startOfDay(new Date());
-      
+      const todayStr = todayMskDateStr();
+
       const notificationsSent: string[] = [];
-      
+
+      // Users we successfully pushed to in this run — at the end we persist
+      // last_notified_date so the next */5 cron tick (and the rest of today's
+      // ticks) skip them.
+      const notifiedUserIds = new Set<number>();
+
       for (const subscription of subscriptions) {
         const user = users.find(u => u.id === subscription.user_id);
 	if (!isInNotificationWindow(user?.notification_time)) continue;
 	if (expoUserIds.has(subscription.user_id)) continue;
+	if (user?.last_notified_date === todayStr) continue;
         const userPlants = plants.filter(p => p.user_id === String(subscription.user_id));
         
         const careNeeded: { water: string[]; fertilize: string[]; repot: string[]; prune: string[] } = {
@@ -530,6 +558,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
             );
             notificationsSent.push(`User ${subscription.user_id}: ${message}`);
+            notifiedUserIds.add(subscription.user_id);
           } catch (err: any) {
             console.error(`Failed to send notification to user ${subscription.user_id}:`, err);
             // Remove invalid subscriptions
@@ -539,15 +568,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
       }
-      
-      // Also send Expo push notifications to mobile subscribers
+
+      // Also send Expo push notifications to mobile subscribers.
       const expoMessages: Parameters<typeof expo.sendPushNotificationsAsync>[0] = [];
+      // Parallel array so we can map send results back to user_ids for marking.
+      const expoMessageUserIds: number[] = [];
 
       for (const sub of expoSubs) {
         if (!Expo.isExpoPushToken(sub.expo_push_token)) continue;
-	
+
         const user = users.find(u => u.id === sub.user_id);
         if (!isInNotificationWindow(user?.notification_time)) continue;
+        if (user?.last_notified_date === todayStr) continue;
 
         const userPlants = plants.filter(p => p.user_id === String(sub.user_id));
         const careParts: string[] = [];
@@ -585,15 +617,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
             title: notifTitle(lang),
             body: plantCountText(plantsNeedingCare.size, lang),
           });
+          expoMessageUserIds.push(sub.user_id);
         }
       }
 
       if (expoMessages.length > 0) {
         const chunks = expo.chunkPushNotifications(expoMessages);
+        let cursor = 0;
         for (const chunk of chunks) {
           try {
             const tickets = await expo.sendPushNotificationsAsync(chunk);
             tickets.forEach((ticket, i) => {
+              const userId = expoMessageUserIds[cursor + i];
               if (ticket.status === 'error') {
                 console.error(`Expo push error for token ${chunk[i].to}:`, ticket.message);
                 if (ticket.details?.error === 'DeviceNotRegistered') {
@@ -601,16 +636,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   const sub = expoSubs.find(s => s.expo_push_token === chunk[i].to);
                   if (sub) storage.deleteExpoPushSubscription(sub.user_id);
                 }
+              } else {
+                notifiedUserIds.add(userId);
               }
             });
           } catch (err) {
             console.error('Expo chunk send error:', err);
+            // Whole chunk failed — those users are NOT marked notified, so the
+            // next */5 cron tick (still inside their window) gets to retry.
           }
+          cursor += chunk.length;
         }
         notificationsSent.push(`Expo: sent to ${expoMessages.length} mobile subscriber(s)`);
       }
 
-      res.json({ success: true, notificationsSent });
+      // Persist "notified today" flag so the next */5 cron tick skips these
+      // users for the rest of the day.
+      for (const userId of notifiedUserIds) {
+        try {
+          await storage.markUserNotified(userId, todayStr);
+        } catch (err) {
+          console.error(`Failed to mark user ${userId} as notified:`, err);
+        }
+      }
+
+      res.json({ success: true, notificationsSent, marked: notifiedUserIds.size });
     } catch (error: any) {
       console.error("Check plants error:", error);
       res.status(400).json({ error: error.message });

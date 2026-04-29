@@ -13,6 +13,7 @@ export interface IStorage {
   getUserByRecoveryKey(recoveryKey: string): Promise<User | null>;
   getAllUsers(): Promise<User[]>;
   updateUserNotificationTime(userId: number, notificationTime: string): Promise<User | null>;
+  markUserNotified(userId: number, date: string): Promise<void>;
   regenerateRecoveryKey(userId: number): Promise<User | null>;
   
   // Plant methods
@@ -63,6 +64,13 @@ export class DbStorage implements IStorage {
       .where(eq(users.id, userId))
       .returning();
     return result || null;
+  }
+
+  async markUserNotified(userId: number, date: string): Promise<void> {
+    await db
+      .update(users)
+      .set({ last_notified_date: date })
+      .where(eq(users.id, userId));
   }
 
   async getUserByRecoveryKey(recoveryKey: string): Promise<User | null> {

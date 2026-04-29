@@ -7,6 +7,11 @@ export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   name: text("name"),
   notification_time: text("notification_time").default("09:00"),
+  // YYYY-MM-DD (Moscow / UTC+3) of the day we last sent this user a care
+  // reminder push. The cron handler in routes.ts checks this to dedupe within
+  // a day so that the */5 cron + a 5-minute notification window never sends
+  // two pushes to the same user on the same date.
+  last_notified_date: text("last_notified_date"),
   recovery_key: uuid("recovery_key").defaultRandom().notNull().unique(),
   created_at: timestamp("created_at").defaultNow().notNull(),
 });

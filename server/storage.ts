@@ -22,6 +22,11 @@ export interface IStorage {
   updatePlant(id: string, plant: Partial<InsertPlant>): Promise<Plant>;
   deletePlant(id: string): Promise<void>;
   getAllPlants(): Promise<Plant[]>;
+  // Same as getAllPlants() but excludes photo_url (base64 blob, ~50-200 KB per
+  // row). Used by the */5 cron in routes.ts where the photo isn't needed —
+  // pulling it every 5 minutes blew through Neon's 5 GB/mo data-transfer
+  // quota in late April 2026.
+  getAllPlantsForCron(): Promise<Omit<Plant, 'photo_url' | 'notes' | 'created_at'>[]>;
   
   // Push subscription methods (web push)
   savePushSubscription(subscription: InsertPushSubscription): Promise<PushSubscription>;
@@ -121,6 +126,28 @@ export class DbStorage implements IStorage {
 
   async getAllPlants(): Promise<Plant[]> {
     return await db.select().from(plants);
+  }
+
+  async getAllPlantsForCron(): Promise<Omit<Plant, 'photo_url' | 'notes' | 'created_at'>[]> {
+    // Explicit column list — never include photo_url here. The cron handler
+    // doesn't need the photo, only dates and frequencies for due-date math
+    // and the plant name for the notification body.
+    return await db
+      .select({
+        id: plants.id,
+        user_id: plants.user_id,
+        name: plants.name,
+        location: plants.location,
+        water_frequency_days: plants.water_frequency_days,
+        last_watered_date: plants.last_watered_date,
+        fertilize_frequency_days: plants.fertilize_frequency_days,
+        last_fertilized_date: plants.last_fertilized_date,
+        repot_frequency_months: plants.repot_frequency_months,
+        last_repotted_date: plants.last_repotted_date,
+        prune_frequency_months: plants.prune_frequency_months,
+        last_pruned_date: plants.last_pruned_date,
+      })
+      .from(plants);
   }
 
   // Push subscription methods

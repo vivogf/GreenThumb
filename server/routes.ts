@@ -442,7 +442,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(401).json({ error: "Authentication required" });
     }
     try {
-      const plants = await storage.getAllPlants();
+      // Use the slim variant (no photo_url) — the photo is base64 in the row
+      // and pulling it every 5 minutes is what blew Neon's monthly transfer
+      // quota in April 2026.
+      const plants = await storage.getAllPlantsForCron();
       const subscriptions = await storage.getAllPushSubscriptions();
       const users = await storage.getAllUsers();
       const expoSubs = await storage.getAllExpoPushSubscriptions();

@@ -153,7 +153,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid time format. Use HH:MM (e.g., 09:00)" });
       }
 
-      const user = await storage.updateUserNotificationTime(userId, notification_time);
+      // Reminders are whole-hour only: the cron runs hourly (see
+      // isInNotificationWindow) so a sub-hour time would silently fire on the
+      // next hour boundary anyway. Normalize minutes to :00 here so even a
+      // legacy client that still sends HH:MM stores a clean whole-hour value.
+      const normalizedTime = `${notification_time.slice(0, 2)}:00`;
+
+      const user = await storage.updateUserNotificationTime(userId, normalizedTime);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
       }

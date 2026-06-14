@@ -181,7 +181,7 @@
     "notifications": "Watering Reminders",
     "notificationsHint": "Get notified when your plants need watering.",
     "notificationTime": "Notification Time",
-    "notificationTimeHint": "Choose when you want to receive daily reminders (your local time).",
+    "notificationTimeHint": "Choose the hour for your daily reminders (your local time).",
     "save": "Save",
     "saving": "Saving...",
     "testNotification": "Send Test Notification",

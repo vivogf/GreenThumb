@@ -529,8 +529,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const notificationsSent: string[] = [];
 
       // Users we successfully pushed to in this run — at the end we persist
-      // last_notified_date so the next */5 cron tick (and the rest of today's
-      // ticks) skip them.
+      // last_notified_date so the next hourly cron tick (and the rest of
+      // today's ticks) skip them.
       const notifiedUserIds = new Set<number>();
 
       for (const subscription of subscriptions) {
@@ -707,8 +707,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             });
           } catch (err) {
             console.error('Expo chunk send error:', err);
-            // Whole chunk failed — those users are NOT marked notified, so the
-            // next */5 cron tick (still inside their window) gets to retry.
+            // Whole chunk failed — those users are NOT marked notified. With
+            // the hourly window the next tick won't re-match them, so they
+            // miss today's reminder (acceptable: transient Expo error).
           }
           cursor += chunk.length;
         }
@@ -716,8 +717,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Persist "notified today" flag in the *user's own* timezone so the
-      // next */5 cron tick skips them for the rest of their local day.
-      for (const userId of notifiedUserIds) {
+      // next hourly cron tick skips them for the rest of their local day.
+      // Array.from avoids the TS2802 Set-iteration error under this tsconfig.
+      for (const userId of Array.from(notifiedUserIds)) {
         try {
           const user = users.find(u => u.id === userId);
           await storage.markUserNotified(userId, todayDateInTz(user?.timezone));

@@ -454,7 +454,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
    *
    * windowMinutes MUST equal the crontab interval. We run the check-plants
    * cron HOURLY ("0 * * * *"), not every 5 min, to keep Neon Free's compute
-   * time under the 100 CU-hr/mo quota: a */5 cron never lets the compute
+   * time under the 100 CU-hr/mo quota: a 5-minute cron never lets the compute
    * autosuspend (~180 CU-hr/mo), an hourly tick keeps it near ~15 CU-hr/mo.
    * With an hourly tick the 60-min half-open windows tile the day exactly, so
    * every user is matched once — at the first top-of-hour >= their

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useLocation } from 'wouter';
 import { LogOut, User, Leaf, Bell, BellOff, Clock, Key, Copy, RefreshCw, Globe } from 'lucide-react';
@@ -42,7 +42,9 @@ export default function Profile() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [notificationsSupported, setNotificationsSupported] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [notificationTime, setNotificationTime] = useState(user?.notification_time || '09:00');
+  // Reminders are whole-hour only (cron runs hourly) — floor any stored value
+  // to the hour so it matches one of the dropdown options below.
+  const [notificationTime, setNotificationTime] = useState(`${(user?.notification_time || '09:00').slice(0, 2)}:00`);
   const [isSavingTime, setIsSavingTime] = useState(false);
   const [showRecoveryKey, setShowRecoveryKey] = useState(false);
   const [isRegeneratingKey, setIsRegeneratingKey] = useState(false);
@@ -352,14 +354,25 @@ export default function Profile() {
                       </Label>
                     </div>
                     <div className="flex gap-2">
-                      <Input
-                        id="notification-time"
-                        type="time"
-                        value={notificationTime}
-                        onChange={(e) => setNotificationTime(e.target.value)}
-                        className="flex-1"
-                        data-testid="input-notification-time"
-                      />
+                      <Select value={notificationTime} onValueChange={setNotificationTime}>
+                        <SelectTrigger
+                          id="notification-time"
+                          className="flex-1"
+                          data-testid="select-notification-time"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from({ length: 24 }, (_, h) => {
+                            const value = `${String(h).padStart(2, '0')}:00`;
+                            return (
+                              <SelectItem key={value} value={value}>
+                                {value}
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
                       <Button
                         size="sm"
                         onClick={handleSaveNotificationTime}

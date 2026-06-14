@@ -110,6 +110,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/auth/update-timezone", requireAuth, async (req: Request, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { timezone } = req.body;
+
+      if (!timezone || typeof timezone !== 'string' || timezone.length > 64) {
+        return res.status(400).json({ error: "Invalid timezone" });
+      }
+
+      // Validate the IANA tz string by trying to format with it.
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(new Date());
+      } catch {
+        return res.status(400).json({ error: "Unknown IANA timezone" });
+      }
+
+      const user = await storage.updateUserTimezone(userId, timezone);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      res.json({ user });
+    } catch (error: any) {
+      console.error("Error updating timezone:", error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
   app.patch("/api/auth/update-notification-time", requireAuth, async (req: Request, res) => {
     try {
       const userId = req.session.userId!;
@@ -245,19 +273,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/push/subscribe", requireAuth, async (req: Request, res) => {
     try {
       const userId = req.session.userId!;
-      const { endpoint, keys } = req.body;
-      
+      const { endpoint, keys, language } = req.body;
+
       if (!endpoint || !keys?.p256dh || !keys?.auth) {
         return res.status(400).json({ error: "Invalid subscription data" });
       }
-      
+
+      const lang = language === 'en' || language === 'ru' ? language : 'ru';
+
       const subscription = await storage.savePushSubscription({
         user_id: userId,
         endpoint,
         p256dh: keys.p256dh,
         auth: keys.auth,
+        language: lang,
       });
-      
+
       res.json({ success: true, subscription });
     } catch (error: any) {
       console.error("Push subscribe error:", error);
@@ -388,50 +419,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return lang === 'en' ? 'Your plants need care 💚' : 'Ваши цветочки ждут заботы 💚';
   }
   /**
-   * Check if user's notification_time (HH:MM, Moscow) falls within the last
-   * `windowMinutes` before now. Server is UTC; users express notification_time
-   * in Moscow (UTC+3). Handles midnight wraparound.
+   * Compute current local hour/minute in the given IANA timezone.
+   * Falls back to Moscow (UTC+3) on unknown tz so legacy users without a
+   * `timezone` row keep the previous behavior.
+   */
+  function localNowInTz(timezone: string | null | undefined): { hour: number; minute: number } {
+    const tz = timezone || 'Europe/Moscow';
+    const now = new Date();
+    try {
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: tz,
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+      }).formatToParts(now);
+      return {
+        hour: parseInt(parts.find(p => p.type === 'hour')!.value, 10),
+        minute: parseInt(parts.find(p => p.type === 'minute')!.value, 10),
+      };
+    } catch {
+      // Bad timezone string — pretend MSK.
+      return {
+        hour: (now.getUTCHours() + 3) % 24,
+        minute: now.getUTCMinutes(),
+      };
+    }
+  }
+
+  /**
+   * Check if user's notification_time (HH:MM in their local tz) falls within
+   * the last `windowMinutes` before "now in their tz". Half-open window
+   * (windowStart, now] — see Apr 28 changelog for why both-side-inclusive
+   * caused the 09:00 + 09:05 duplicate-push bug.
+   *
+   * windowMinutes MUST equal the crontab interval. We run the check-plants
+   * cron HOURLY ("0 * * * *"), not every 5 min, to keep Neon Free's compute
+   * time under the 100 CU-hr/mo quota: a */5 cron never lets the compute
+   * autosuspend (~180 CU-hr/mo), an hourly tick keeps it near ~15 CU-hr/mo.
+   * With an hourly tick the 60-min half-open windows tile the day exactly, so
+   * every user is matched once — at the first top-of-hour >= their
+   * notification_time. Trade-off: reminders land on the hour (a 09:30 user is
+   * notified at 10:00). If you ever change the crontab interval, change this
+   * default to match it or users will be missed / double-notified.
    */
   function isInNotificationWindow(
     userTime: string | null | undefined,
-    windowMinutes = 5,
+    timezone: string | null | undefined,
+    windowMinutes = 60,
   ): boolean {
     if (!userTime) return false;
     const match = userTime.match(/^(\d{1,2}):(\d{2})$/);
     if (!match) return false;
     const userMinutes = parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
 
-    const now = new Date();
-    const mskNowMinutes =
-      (now.getUTCHours() * 60 + now.getUTCMinutes() + 3 * 60) % 1440;
-    const windowStart = mskNowMinutes - windowMinutes;
+    const { hour, minute } = localNowInTz(timezone);
+    const localNowMinutes = (hour * 60 + minute) % 1440;
+    const windowStart = localNowMinutes - windowMinutes;
 
-    // Half-open window (windowStart, mskNow] — excluding the lower bound so
-    // a user with notification_time == windowStart only matches the *previous*
-    // tick, not this one. Without this, the */5 cron would match the same user
-    // on two consecutive ticks 5 minutes apart (the original "09:00 + 09:05"
-    // duplicate-push bug).
     if (windowStart < 0) {
-      // Window crosses midnight (e.g. mskNow=00:02, window=(23:57, 00:02])
-      return userMinutes > windowStart + 1440 || userMinutes <= mskNowMinutes;
+      // Window crosses midnight (e.g. now=00:02, window=(23:57, 00:02])
+      return userMinutes > windowStart + 1440 || userMinutes <= localNowMinutes;
     }
-    return userMinutes > windowStart && userMinutes <= mskNowMinutes;
+    return userMinutes > windowStart && userMinutes <= localNowMinutes;
   }
 
   /**
-   * "Today" date string in Moscow time (UTC+3) as YYYY-MM-DD.
-   * Used to dedupe the daily care reminder push per user. We use Moscow time
-   * (not UTC) so the day boundary matches what the user perceives — otherwise
-   * a push at 23:30 MSK and another at 00:30 MSK would both count as "today".
+   * "Today" date string YYYY-MM-DD in the user's local timezone.
+   * Falls back to Moscow on unknown/missing tz. Used for per-user daily dedup.
    */
-  function todayMskDateStr(): string {
-    const now = new Date();
-    const mskMs = now.getTime() + 3 * 60 * 60 * 1000;
-    const msk = new Date(mskMs);
-    const y = msk.getUTCFullYear();
-    const m = String(msk.getUTCMonth() + 1).padStart(2, '0');
-    const d = String(msk.getUTCDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+  function todayDateInTz(timezone: string | null | undefined): string {
+    const tz = timezone || 'Europe/Moscow';
+    try {
+      // 'en-CA' formats dates as YYYY-MM-DD by default, no manual parsing.
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date());
+    } catch {
+      const now = new Date();
+      const mskMs = now.getTime() + 3 * 60 * 60 * 1000;
+      const msk = new Date(mskMs);
+      const y = msk.getUTCFullYear();
+      const m = String(msk.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(msk.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
   }
   app.post("/api/push/check-plants", async (req: Request, res) => {
     // Require either authentication or a secret API key
@@ -451,7 +525,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const expoSubs = await storage.getAllExpoPushSubscriptions();
       const expoUserIds = new Set(expoSubs.map(s => s.user_id));
       const today = startOfDay(new Date());
-      const todayStr = todayMskDateStr();
 
       const notificationsSent: string[] = [];
 
@@ -462,9 +535,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       for (const subscription of subscriptions) {
         const user = users.find(u => u.id === subscription.user_id);
-	if (!isInNotificationWindow(user?.notification_time)) continue;
-	if (expoUserIds.has(subscription.user_id)) continue;
-	if (user?.last_notified_date === todayStr) continue;
+        if (!isInNotificationWindow(user?.notification_time, user?.timezone)) continue;
+        if (expoUserIds.has(subscription.user_id)) continue;
+        const userTodayStr = todayDateInTz(user?.timezone);
+        if (user?.last_notified_date === userTodayStr) continue;
         const userPlants = plants.filter(p => p.user_id === String(subscription.user_id));
         
         const careNeeded: { water: string[]; fertilize: string[]; repot: string[]; prune: string[] } = {
@@ -512,31 +586,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
         
-        // Build notification message
-        const messages: string[] = [];
-        
-        if (careNeeded.water.length > 0) {
-          messages.push(careNeeded.water.length === 1
-            ? `Water: ${careNeeded.water[0]}`
-            : `Water ${careNeeded.water.length} plants`);
-        }
-        if (careNeeded.fertilize.length > 0) {
-          messages.push(careNeeded.fertilize.length === 1
-            ? `Fertilize: ${careNeeded.fertilize[0]}`
-            : `Fertilize ${careNeeded.fertilize.length} plants`);
-        }
-        if (careNeeded.repot.length > 0) {
-          messages.push(careNeeded.repot.length === 1
-            ? `Repot: ${careNeeded.repot[0]}`
-            : `Repot ${careNeeded.repot.length} plants`);
-        }
-        if (careNeeded.prune.length > 0) {
-          messages.push(careNeeded.prune.length === 1
-            ? `Prune: ${careNeeded.prune[0]}`
-            : `Prune ${careNeeded.prune.length} plants`);
-        }
-        
-        if (messages.length > 0) {
+        // Unique plant names that need any kind of care today.
+        const plantsNeedingCare = new Set<string>([
+          ...careNeeded.water,
+          ...careNeeded.fertilize,
+          ...careNeeded.repot,
+          ...careNeeded.prune,
+        ]);
+
+        if (plantsNeedingCare.size > 0) {
           const pushSubscription = {
             endpoint: subscription.endpoint,
             keys: {
@@ -544,15 +602,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
               auth: subscription.auth,
             },
           };
-          
-          const message = messages.join(" | ");
+
+          // Localize title + body using the per-subscription language column.
+          // Existing rows default to 'ru' (see schema), so this is zero-regression.
+          const lang: 'ru' | 'en' = subscription.language === 'en' ? 'en' : 'ru';
+          const body = plantCountText(plantsNeedingCare.size, lang);
 
           try {
             await webpush.sendNotification(
               pushSubscription,
               JSON.stringify({
-                title: "Ваши цветочки ждут заботы 💚",
-                body: message,
+                title: notifTitle(lang),
+                body,
               }),
               {
                 TTL: 86400,
@@ -560,7 +621,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 topic: 'plant-care',
               }
             );
-            notificationsSent.push(`User ${subscription.user_id}: ${message}`);
+            notificationsSent.push(`User ${subscription.user_id}: ${body}`);
             notifiedUserIds.add(subscription.user_id);
           } catch (err: any) {
             console.error(`Failed to send notification to user ${subscription.user_id}:`, err);
@@ -581,8 +642,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!Expo.isExpoPushToken(sub.expo_push_token)) continue;
 
         const user = users.find(u => u.id === sub.user_id);
-        if (!isInNotificationWindow(user?.notification_time)) continue;
-        if (user?.last_notified_date === todayStr) continue;
+        if (!isInNotificationWindow(user?.notification_time, user?.timezone)) continue;
+        const userTodayStr = todayDateInTz(user?.timezone);
+        if (user?.last_notified_date === userTodayStr) continue;
 
         const userPlants = plants.filter(p => p.user_id === String(sub.user_id));
         const careParts: string[] = [];
@@ -653,11 +715,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         notificationsSent.push(`Expo: sent to ${expoMessages.length} mobile subscriber(s)`);
       }
 
-      // Persist "notified today" flag so the next */5 cron tick skips these
-      // users for the rest of the day.
+      // Persist "notified today" flag in the *user's own* timezone so the
+      // next */5 cron tick skips them for the rest of their local day.
       for (const userId of notifiedUserIds) {
         try {
-          await storage.markUserNotified(userId, todayStr);
+          const user = users.find(u => u.id === userId);
+          await storage.markUserNotified(userId, todayDateInTz(user?.timezone));
         } catch (err) {
           console.error(`Failed to mark user ${userId} as notified:`, err);
         }
@@ -668,6 +731,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Check plants error:", error);
       res.status(400).json({ error: error.message });
     }
+  });
+
+  // Catch-all for unknown /api/* — return 404 instead of letting Express fall
+  // through to the SPA index.html. Without this, bot scanners hitting
+  // /api/.env, /api/phpinfo.php etc. all see HTTP 200, which (a) wastes our
+  // logs and (b) confuses sec-tooling about what's really exposed.
+  app.all("/api/*", (req: Request, res) => {
+    res.status(404).json({ error: "Not found" });
   });
 
   const httpServer = createServer(app);

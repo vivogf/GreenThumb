@@ -13,6 +13,7 @@ export interface IStorage {
   getUserByRecoveryKey(recoveryKey: string): Promise<User | null>;
   getAllUsers(): Promise<User[]>;
   updateUserNotificationTime(userId: number, notificationTime: string): Promise<User | null>;
+  updateUserTimezone(userId: number, timezone: string): Promise<User | null>;
   markUserNotified(userId: number, date: string): Promise<void>;
   regenerateRecoveryKey(userId: number): Promise<User | null>;
   
@@ -38,7 +39,8 @@ export interface IStorage {
   saveExpoPushSubscription(userId: number, token: string, language?: string): Promise<ExpoPushSubscription>;
   getExpoPushSubscriptionByUserId(userId: number): Promise<string | null>;
   deleteExpoPushSubscription(userId: number): Promise<void>;
-  getAllExpoPushSubscriptions(): Promise<{ user_id: number; expo_push_token: string; language: string }[]>;}
+  getAllExpoPushSubscriptions(): Promise<{ user_id: number; expo_push_token: string; language: string }[]>;
+}
 
 export class DbStorage implements IStorage {
   // User methods
@@ -66,6 +68,15 @@ export class DbStorage implements IStorage {
     const [result] = await db
       .update(users)
       .set({ notification_time: notificationTime })
+      .where(eq(users.id, userId))
+      .returning();
+    return result || null;
+  }
+
+  async updateUserTimezone(userId: number, timezone: string): Promise<User | null> {
+    const [result] = await db
+      .update(users)
+      .set({ timezone })
       .where(eq(users.id, userId))
       .returning();
     return result || null;
@@ -201,9 +212,15 @@ export class DbStorage implements IStorage {
     await db.delete(expoPushSubscriptions).where(eq(expoPushSubscriptions.user_id, userId));
   }
 
-  async getAllExpoPushSubscriptions(): Promise<{ user_id: number; expo_push_token: string }[]> {
+  async getAllExpoPushSubscriptions(): Promise<{ user_id: number; expo_push_token: string; language: string }[]> {
     const rows = await db.select().from(expoPushSubscriptions);
-    return rows.map((r) => ({ user_id: r.user_id, expo_push_token: r.expo_push_token }));
+    // Fix: previously dropped `language` here, so the cron always fell back to
+    // 'ru' regardless of what the mobile client sent at subscribe time.
+    return rows.map((r) => ({
+      user_id: r.user_id,
+      expo_push_token: r.expo_push_token,
+      language: r.language,
+    }));
   }
 }
 

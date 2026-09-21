@@ -4,9 +4,37 @@ import { storage } from "./storage";
 import { insertPlantSchema } from "@shared/schema";
 import webpush from "web-push";
 import { Expo } from "expo-server-sdk";
+import { getApps, initializeApp, cert, type App } from "firebase-admin/app";
+import { getMessaging, type Messaging } from "firebase-admin/messaging";
 import { addDays, isToday, isBefore, startOfDay } from "date-fns";
 
 const expo = new Expo();
+
+// FCM (firebase-admin) — used by the cron to deliver care reminders to the
+// KMP app subscribers via FCM HTTP v1. Credentials come from a service
+// account JSON stored in FIREBASE_SERVICE_ACCOUNT_JSON (single env var, no
+// extra file on the VPS). If it is not configured the FCM cron branch is
+// skipped with a log line — web push and Expo push keep working unchanged.
+let fcmApp: App | null = null;
+try {
+  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (serviceAccountJson) {
+    fcmApp = getApps().find(a => a.name === "greenthumb-fcm") ?? initializeApp(
+      { credential: cert(JSON.parse(serviceAccountJson)) },
+      "greenthumb-fcm",
+    );
+  } else {
+    console.log("FIREBASE_SERVICE_ACCOUNT_JSON not set — FCM cron branch disabled");
+  }
+} catch (err) {
+  // A malformed JSON env var must not take the whole server down.
+  console.error("Failed to initialize firebase-admin (FCM disabled):", err);
+  fcmApp = null;
+}
+
+function fcmMessaging(): Messaging | null {
+  return fcmApp ? getMessaging(fcmApp) : null;
+}
 
 // Configure web-push with VAPID keys
 if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
@@ -361,6 +389,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // FCM push subscription endpoints (KMP app)
+  app.post("/api/push/subscribe-fcm", requireAuth, async (req: Request, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { fcm_token, platform, language } = req.body;
+      if (!fcm_token || typeof fcm_token !== 'string' || fcm_token.trim().length === 0) {
+        return res.status(400).json({ error: "Invalid FCM token" });
+      }
+      if (platform !== undefined && platform !== 'android' && platform !== 'ios') {
+        return res.status(400).json({ error: "Invalid platform" });
+      }
+      const lang = language === 'en' || language === 'ru' ? language : 'ru';
+      await storage.saveFcmPushSubscription(userId, fcm_token.trim(), platform ?? 'android', lang);
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("FCM subscribe error:", error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/push/subscribe-fcm", requireAuth, async (req: Request, res) => {
+    try {
+      const userId = req.session.userId!;
+      await storage.deleteFcmPushSubscription(userId);
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("FCM unsubscribe error:", error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/push/fcm-subscription", requireAuth, async (req: Request, res) => {
+    try {
+      const userId = req.session.userId!;
+      const sub = await storage.getFcmPushSubscriptionByUserId(userId);
+      res.json({ subscribed: !!sub });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Delete account (KMP app; Google Play requires in-app account deletion).
+  // Wipes every row tied to the user, then the user row itself. After a 200
+  // the cookie session is already destroyed server-side: the client's next
+  // /api/auth/me with the old cookie gets 401, and login with the old
+  // recovery key is impossible (the key was deleted with the row).
+  app.delete("/api/auth/account", requireAuth, async (req: Request, res) => {
+    try {
+      const userId = req.session.userId!;
+      await storage.deleteAccountCascade(userId);
+      req.session.destroy((err) => {
+        if (err) {
+          console.error("Account deletion: session destroy failed:", err);
+          return res.status(500).json({ error: "Could not log out" });
+        }
+        res.json({ success: true });
+      });
+    } catch (error: any) {
+      console.error("Account deletion error:", error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
   app.get("/api/push/vapid-public-key", (req: Request, res) => {
     res.json({ publicKey: process.env.VAPID_PUBLIC_KEY });
   });
@@ -530,6 +621,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const users = await storage.getAllUsers();
       const expoSubs = await storage.getAllExpoPushSubscriptions();
       const expoUserIds = new Set(expoSubs.map(s => s.user_id));
+      const fcmSubs = await storage.getAllFcmPushSubscriptions();
       const today = startOfDay(new Date());
 
       const notificationsSent: string[] = [];
@@ -538,6 +630,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // last_notified_date so the next hourly cron tick (and the rest of
       // today's ticks) skip them.
       const notifiedUserIds = new Set<number>();
+      // Same for FCM-delivered users; kept separate because the FCM send is
+      // fire-and-forget (see below), so a delivery failure must not mark the
+      // user and block Expo/web fallback sends in the same tick.
+      const fcmDoneUserIds = new Set<number>();
 
       for (const subscription of subscriptions) {
         const user = users.find(u => u.id === subscription.user_id);
@@ -639,6 +735,104 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Also send FCM push notifications to KMP app subscribers. The dedup
+      // and window logic mirror the Expo loop below; users with BOTH an FCM
+      // and an Expo subscription get at most one reminder (FCM wins, the
+      // Expo branch then skips them the same way the web branch does).
+      const messaging = fcmMessaging();
+      if (messaging) {
+        const fcmSubsThisTick = fcmSubs.filter(sub => {
+          const user = users.find(u => u.id === sub.user_id);
+          if (!isInNotificationWindow(user?.notification_time, user?.timezone)) return false;
+          const userTodayStr = todayDateInTz(user?.timezone);
+          if (user?.last_notified_date === userTodayStr) return false;
+          return true;
+        });
+
+        // FCM tokens can be revoked (app uninstalled, token rotation, Play
+        // Services cache reset). Stale tokens are cleaned up when FCM
+        // reports them definitively dead (registration-token-not-registered
+        // / invalid-registration-token / invalid-argument).
+        for (const sub of fcmSubsThisTick) {
+          try {
+            const user = users.find(u => u.id === sub.user_id);
+            const userPlants = plants.filter(p => p.user_id === String(sub.user_id));
+            const careParts: string[] = [];
+
+            for (const plant of userPlants) {
+              const lastWatered = new Date(plant.last_watered_date);
+              const nextWaterDate = addDays(lastWatered, plant.water_frequency_days);
+              if (isToday(nextWaterDate) || isBefore(nextWaterDate, today)) {
+                careParts.push(`💧 ${plant.name}`);
+              }
+              if (plant.fertilize_frequency_days && plant.last_fertilized_date) {
+                const nextDate = addDays(new Date(plant.last_fertilized_date), plant.fertilize_frequency_days);
+                if (isToday(nextDate) || isBefore(nextDate, today)) careParts.push(`🌿 ${plant.name}`);
+              }
+              if (plant.repot_frequency_months && plant.last_repotted_date) {
+                const nextDate = new Date(plant.last_repotted_date);
+                nextDate.setMonth(nextDate.getMonth() + plant.repot_frequency_months);
+                if (isToday(nextDate) || isBefore(startOfDay(nextDate), today)) careParts.push(`🪴 ${plant.name}`);
+              }
+              if (plant.prune_frequency_months && plant.last_pruned_date) {
+                const nextDate = new Date(plant.last_pruned_date);
+                nextDate.setMonth(nextDate.getMonth() + plant.prune_frequency_months);
+                if (isToday(nextDate) || isBefore(startOfDay(nextDate), today)) careParts.push(`✂️ ${plant.name}`);
+              }
+            }
+
+            if (careParts.length === 0) continue;
+
+            const plantsNeedingCare = new Set(
+              careParts.map(p => p.replace(/^[^\s]+\s+/, ''))
+            );
+            const lang: 'ru' | 'en' = sub.language === 'en' ? 'en' : 'ru';
+            const body = plantCountText(plantsNeedingCare.size, lang);
+
+            const fcmMessage = {
+              token: sub.fcm_token,
+              notification: {
+                title: notifTitle(lang),
+                body,
+              },
+              // Deep-link contract from the Expo app: tap → plant/{id}; the
+              // KMP client reads data.plant_id the same way. The care
+              // reminder is a dashboard-level nudge, so plant_id is
+              // intentionally absent.
+              android: {
+                priority: 'high' as const,
+              },
+            };
+
+            // Fire-and-forget: a hung FCM HTTP call must not blow the cron's
+            // total runtime past the next tick. Failures are logged and the
+            // user simply misses this tick's reminder (window moves on).
+            messaging
+              .send(fcmMessage)
+              .then(() => {
+                notificationsSent.push(`FCM user ${sub.user_id}: ${body}`);
+                notifiedUserIds.add(sub.user_id);
+                fcmDoneUserIds.add(sub.user_id);
+              })
+              .catch((err: any) => {
+                console.error(`FCM send error for user ${sub.user_id}:`, err?.message || err);
+                const code = err?.errorInfo?.code || err?.code || '';
+                if (code.includes('registration-token-not-registered') || code.includes('invalid-registration-token') || code === 'messaging/invalid-argument') {
+                  storage.deleteFcmPushSubscription(sub.user_id).catch(e =>
+                    console.error(`Failed to delete stale FCM subscription for user ${sub.user_id}:`, e)
+                  );
+                }
+              });
+          } catch (err: any) {
+            // Body-building errors — log and move on to the next subscriber.
+            console.error(`FCM branch error for user ${sub.user_id}:`, err);
+          }
+        }
+        if (fcmSubsThisTick.length > 0) {
+          notificationsSent.push(`FCM: ${fcmSubsThisTick.length} subscriber(s) queued`);
+        }
+      }
+
       // Also send Expo push notifications to mobile subscribers.
       const expoMessages: Parameters<typeof expo.sendPushNotificationsAsync>[0] = [];
       // Parallel array so we can map send results back to user_ids for marking.
@@ -649,6 +843,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         const user = users.find(u => u.id === sub.user_id);
         if (!isInNotificationWindow(user?.notification_time, user?.timezone)) continue;
+        if (fcmDoneUserIds.has(sub.user_id)) continue;
         const userTodayStr = todayDateInTz(user?.timezone);
         if (user?.last_notified_date === userTodayStr) continue;
 
@@ -732,6 +927,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } catch (err) {
           console.error(`Failed to mark user ${userId} as notified:`, err);
         }
+      }
+
+      if (fcmDoneUserIds.size > 0) {
+        console.log(`FCM cron branch: ${fcmDoneUserIds.size} user(s) delivered this tick`);
       }
 
       res.json({ success: true, notificationsSent, marked: notifiedUserIds.size });

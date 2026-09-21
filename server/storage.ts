@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { plants, users, pushSubscriptions, expoPushSubscriptions, type Plant, type InsertPlant, type User, type InsertUser, type PushSubscription, type InsertPushSubscription, type ExpoPushSubscription } from "@shared/schema";
+import { plants, users, pushSubscriptions, expoPushSubscriptions, fcmPushSubscriptions, type Plant, type InsertPlant, type User, type InsertUser, type PushSubscription, type InsertPushSubscription, type ExpoPushSubscription, type FcmPushSubscription } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
 const client = postgres(process.env.DATABASE_URL!);
@@ -24,9 +24,9 @@ export interface IStorage {
   deletePlant(id: string): Promise<void>;
   getAllPlants(): Promise<Plant[]>;
   // Same as getAllPlants() but excludes photo_url (base64 blob, ~50-200 KB per
-  // row). Used by the */5 cron in routes.ts where the photo isn't needed —
-  // pulling it every 5 minutes blew through Neon's 5 GB/mo data-transfer
-  // quota in late April 2026.
+  // row). Used by the check-plants cron in routes.ts where the photo isn't
+  // needed — pulling it every 5 minutes blew through Neon's 5 GB/mo
+  // data-transfer quota in late April 2026.
   getAllPlantsForCron(): Promise<Omit<Plant, 'photo_url' | 'notes' | 'created_at'>[]>;
   
   // Push subscription methods (web push)
@@ -40,6 +40,18 @@ export interface IStorage {
   getExpoPushSubscriptionByUserId(userId: number): Promise<string | null>;
   deleteExpoPushSubscription(userId: number): Promise<void>;
   getAllExpoPushSubscriptions(): Promise<{ user_id: number; expo_push_token: string; language: string }[]>;
+
+  // FCM push subscription methods (KMP app)
+  saveFcmPushSubscription(userId: number, token: string, platform?: string, language?: string): Promise<FcmPushSubscription>;
+  getFcmPushSubscriptionByUserId(userId: number): Promise<FcmPushSubscription | null>;
+  deleteFcmPushSubscription(userId: number): Promise<void>;
+  getAllFcmPushSubscriptions(): Promise<{ user_id: number; fcm_token: string; platform: string; language: string }[]>;
+
+  // Account deletion (KMP app, Google Play requirement): removes every row
+  // that belongs to the user in one transaction, then the user row itself.
+  // Plant photos live in plants.photo_url (data-URI), so there is no separate
+  // file storage to clean up.
+  deleteAccountCascade(userId: number): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -221,6 +233,56 @@ export class DbStorage implements IStorage {
       expo_push_token: r.expo_push_token,
       language: r.language,
     }));
+  }
+
+  // FCM push subscription methods (KMP app)
+  async saveFcmPushSubscription(userId: number, token: string, platform: string = 'android', language: string = 'ru'): Promise<FcmPushSubscription> {
+    // Delete existing token for this user first (upsert pattern, mirrors
+    // saveExpoPushSubscription) — one row per user, so a re-subscribe can
+    // never duplicate.
+    await db.delete(fcmPushSubscriptions).where(eq(fcmPushSubscriptions.user_id, userId));
+    const [result] = await db
+      .insert(fcmPushSubscriptions)
+      .values({ user_id: userId, fcm_token: token, platform, language })
+      .returning();
+    return result;
+  }
+
+  async getFcmPushSubscriptionByUserId(userId: number): Promise<FcmPushSubscription | null> {
+    const [sub] = await db
+      .select()
+      .from(fcmPushSubscriptions)
+      .where(eq(fcmPushSubscriptions.user_id, userId));
+    return sub || null;
+  }
+
+  async deleteFcmPushSubscription(userId: number): Promise<void> {
+    await db.delete(fcmPushSubscriptions).where(eq(fcmPushSubscriptions.user_id, userId));
+  }
+
+  async getAllFcmPushSubscriptions(): Promise<{ user_id: number; fcm_token: string; platform: string; language: string }[]> {
+    const rows = await db.select().from(fcmPushSubscriptions);
+    return rows.map((r) => ({
+      user_id: r.user_id,
+      fcm_token: r.fcm_token,
+      platform: r.platform,
+      language: r.language,
+    }));
+  }
+
+  async deleteAccountCascade(userId: number): Promise<void> {
+    await db.transaction(async (tx) => {
+      await tx.delete(plants).where(eq(plants.user_id, String(userId)));
+      await tx.delete(pushSubscriptions).where(eq(pushSubscriptions.user_id, userId));
+      await tx.delete(expoPushSubscriptions).where(eq(expoPushSubscriptions.user_id, userId));
+      await tx.delete(fcmPushSubscriptions).where(eq(fcmPushSubscriptions.user_id, userId));
+      // The session row (connect-pg-simple `session` table, keyed by sid, holds
+      // the userId in its JSON blob) isn't addressed by user_id, so the caller
+      // destroys the cookie session in the HTTP layer instead — drizzle-kit
+      // push would even offer to drop that table, which is why it's never in
+      // this schema.
+      await tx.delete(users).where(eq(users.id, userId));
+    });
   }
 }
 

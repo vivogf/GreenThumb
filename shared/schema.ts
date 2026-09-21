@@ -14,7 +14,7 @@ export const users = pgTable("users", {
   timezone: text("timezone"),
   // YYYY-MM-DD (in user's local timezone) of the day we last sent this user a
   // care reminder push. The cron handler in routes.ts checks this to dedupe
-  // within a day so that the */5 cron + a 5-minute notification window never
+  // within a day so the hourly cron + a 60-minute notification window never
   // sends two pushes to the same user on the same date.
   last_notified_date: text("last_notified_date"),
   recovery_key: uuid("recovery_key").defaultRandom().notNull().unique(),
@@ -95,3 +95,19 @@ export const expoPushSubscriptions = pgTable("expo_push_subscriptions", {
 });
 
 export type ExpoPushSubscription = typeof expoPushSubscriptions.$inferSelect;
+
+// FCM Push Subscriptions for the KMP (Kotlin Multiplatform) app — the
+// Expo push pipeline can't serve it (no Expo token in a native build), so
+// the client subscribes with a raw FCM registration token sent straight to
+// the backend, which delivers via FCM HTTP v1 (firebase-admin).
+// Mirrors expo_push_subscriptions; unique row per user (delete+insert).
+export const fcmPushSubscriptions = pgTable("fcm_push_subscriptions", {
+  id: serial("id").primaryKey(),
+  user_id: integer("user_id").notNull(),
+  fcm_token: text("fcm_token").notNull(),
+  platform: text("platform").notNull().default("android"),
+  language: text("language").notNull().default("ru"),
+  created_at: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type FcmPushSubscription = typeof fcmPushSubscriptions.$inferSelect;

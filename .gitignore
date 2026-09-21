@@ -19,3 +19,5 @@ vite.config.ts.*
 
 # Claude internal docs (contains infrastructure details)
 CLAUDE.md
+# Agent tool state (Factory/Droid session artifacts)
+.factory/

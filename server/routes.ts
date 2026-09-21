@@ -52,6 +52,17 @@ function toDateString(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+// Resolve with `null` if `p` hasn't settled within `ms`. A rejection still
+// surfaces (Promise.allSettled swallows it) — the cap only trims a hung
+// promise so the cron tick never outlasts the next hourly one. firebase-admin
+// has its own 15 s HTTP timeout on FCM sends, so this is belt-and-suspenders.
+function withDeadlineCap(p: Promise<unknown>, ms: number): Promise<unknown | null> {
+  return Promise.race([
+    p,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
+}
+
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.session?.userId) {
     return res.status(401).json({ error: "Authentication required" });
@@ -630,10 +641,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // last_notified_date so the next hourly cron tick (and the rest of
       // today's ticks) skip them.
       const notifiedUserIds = new Set<number>();
-      // Same for FCM-delivered users; kept separate because the FCM send is
-      // fire-and-forget (see below), so a delivery failure must not mark the
-      // user and block Expo/web fallback sends in the same tick.
+      // FCM deliveries that succeeded in this tick. Kept separate until the
+      // sends are awaited below, so a delivery failure never marks the user
+      // (that would block the Expo fallback in the same tick).
       const fcmDoneUserIds = new Set<number>();
+      // Promises of the fire-and-forget FCM sends, awaited (with a cap)
+      // before the last_notified_date write below.
+      const fcmSendPromises: Promise<void>[] = [];
 
       for (const subscription of subscriptions) {
         const user = users.find(u => u.id === subscription.user_id);
@@ -804,25 +818,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
               },
             };
 
-            // Fire-and-forget: a hung FCM HTTP call must not blow the cron's
-            // total runtime past the next tick. Failures are logged and the
-            // user simply misses this tick's reminder (window moves on).
-            messaging
-              .send(fcmMessage)
-              .then(() => {
-                notificationsSent.push(`FCM user ${sub.user_id}: ${body}`);
-                notifiedUserIds.add(sub.user_id);
-                fcmDoneUserIds.add(sub.user_id);
-              })
-              .catch((err: any) => {
-                console.error(`FCM send error for user ${sub.user_id}:`, err?.message || err);
-                const code = err?.errorInfo?.code || err?.code || '';
-                if (code.includes('registration-token-not-registered') || code.includes('invalid-registration-token') || code === 'messaging/invalid-argument') {
-                  storage.deleteFcmPushSubscription(sub.user_id).catch(e =>
-                    console.error(`Failed to delete stale FCM subscription for user ${sub.user_id}:`, e)
-                  );
-                }
-              });
+            // Fire-and-forget per call (a hung HTTP call must not stall the
+            // loop), but the promise is collected and awaited — with a cap —
+            // before the last_notified_date write, so FCM-delivered users
+            // actually get marked (dedup works) and the Expo branch below
+            // can skip them in the same tick.
+            fcmSendPromises.push(
+              messaging
+                .send(fcmMessage)
+                .then(() => {
+                  notificationsSent.push(`FCM user ${sub.user_id}: ${body}`);
+                  notifiedUserIds.add(sub.user_id);
+                  fcmDoneUserIds.add(sub.user_id);
+                })
+                .catch((err: any) => {
+                  console.error(`FCM send error for user ${sub.user_id}:`, err?.message || err);
+                  const code = err?.errorInfo?.code || err?.code || '';
+                  if (code.includes('registration-token-not-registered') || code.includes('invalid-registration-token') || code === 'messaging/invalid-argument') {
+                    storage.deleteFcmPushSubscription(sub.user_id).catch(e =>
+                      console.error(`Failed to delete stale FCM subscription for user ${sub.user_id}:`, e)
+                    );
+                  }
+                })
+            );
           } catch (err: any) {
             // Body-building errors — log and move on to the next subscriber.
             console.error(`FCM branch error for user ${sub.user_id}:`, err);
@@ -831,6 +849,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (fcmSubsThisTick.length > 0) {
           notificationsSent.push(`FCM: ${fcmSubsThisTick.length} subscriber(s) queued`);
         }
+        // Wait (capped) for the fire-and-forget sends above to settle, so the
+        // delivered set is populated before the dedup write at the end of the
+        // tick and before the Expo loop picks the skip-set up.
+        await withDeadlineCap(Promise.allSettled(fcmSendPromises), 30000);
       }
 
       // Also send Expo push notifications to mobile subscribers.

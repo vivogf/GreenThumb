@@ -1,3 +1,3 @@
-# Архив исторических заметок
+# Archive of historical notes
 
-Эти файлы — исторические документы ранних этапов проекта (эра Supabase и Replit: email/пароль вместо recovery key, Supabase Auth вместо Express-сессий, `drizzle-kit push` без предупреждений). Они сохранены ради истории и больше не отражают текущее устройство системы — актуальная документация живёт в [корневом README](../../README.md), дизайн-система — в [docs/design-guidelines.md](../design-guidelines.md).
+These files are historical documents from the early stages of the project (the Supabase and Replit era: email/password instead of a recovery key, Supabase Auth instead of Express sessions, `drizzle-kit push` without warnings). They are kept for the record and no longer reflect how the system works today — up-to-date documentation lives in the [root README](../../README.md), and the design system in [docs/design-guidelines.md](../design-guidelines.md).

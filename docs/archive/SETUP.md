@@ -1,18 +1,18 @@
 # GreenThumb Setup Guide
 
-## Для пользователей с существующей таблицей plants
+## For users with an existing plants table
 
-**Если у вас уже есть таблица `plants` с полями `species`, `watering_frequency`, `last_watered`, `image_url`:**
+**If you already have a `plants` table with the fields `species`, `watering_frequency`, `last_watered`, `image_url`:**
 
-Используйте файл `migration_to_new_schema.sql` для миграции на новую схему.
+Use the `migration_to_new_schema.sql` file to migrate to the new schema.
 
-См. **IMPORTANT_READ_FIRST.md** для быстрых инструкций по миграции.
+See **IMPORTANT_READ_FIRST.md** for quick migration instructions.
 
 ---
 
-## Настройка Supabase (для новых проектов)
+## Supabase setup (for new projects)
 
-Ваше приложение GreenThumb почти готово! Нужно настроить аутентификацию и базу данных в Supabase.
+Your GreenThumb app is almost ready! You just need to set up authentication and the database in Supabase.
 
 ### Step 1: Disable Email Confirmation (For Testing)
 
@@ -34,12 +34,12 @@ Now users can sign in immediately after signing up without email confirmation.
 
 ### Step 3: Run the Setup SQL
 
-**Выберите правильный скрипт:**
+**Choose the right script:**
 
-- **Если таблица plants уже существует** (но с другими полями): используйте `migration_to_new_schema.sql`
-- **Если это новый проект** (таблицы plants нет): используйте `supabase_setup.sql`
+- **If the plants table already exists** (but with different fields): use `migration_to_new_schema.sql`
+- **If this is a new project** (no plants table yet): use `supabase_setup.sql`
 
-Скопируйте всё содержимое выбранного SQL файла и вставьте в SQL editor, затем нажмите **Run**.
+Copy the entire contents of the chosen SQL file and paste it into the SQL editor, then click **Run**.
 
 This will:
 - Create the `plants` table with all required fields

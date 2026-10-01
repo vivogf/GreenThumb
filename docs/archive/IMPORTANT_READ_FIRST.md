@@ -1,56 +1,56 @@
-# ВАЖНО: Миграция базы данных
+# IMPORTANT: Database migration
 
-## Ваша база данных требует обновления!
+## Your database needs an update!
 
-У вас уже есть таблица `plants`, но её структура немного отличается от того, что использует приложение. Нужно запустить простую миграцию.
+You already have a `plants` table, but its structure differs slightly from what the app expects. You need to run a simple migration.
 
-## Быстрая миграция (2 минуты)
+## Quick migration (2 minutes)
 
-### Шаг 1: Отключите email подтверждение
-1. Откройте Supabase Dashboard
-2. Перейдите в **Authentication** → **Providers** → **Email**
-3. Найдите "Confirm email" и **ВЫКЛЮЧИТЕ** его
-4. Нажмите **Save**
+### Step 1: Disable email confirmation
+1. Open the Supabase Dashboard
+2. Go to **Authentication** → **Providers** → **Email**
+3. Find "Confirm email" and **turn it OFF**
+4. Click **Save**
 
-### Шаг 2: Запустите миграционный скрипт
-1. В Supabase Dashboard откройте **SQL Editor**
-2. Нажмите **New Query**
-3. Скопируйте **ВСЁ** содержимое файла `migration_to_new_schema.sql`
-4. Вставьте и нажмите **Run**
-5. Вы увидите: "Migration complete!"
+### Step 2: Run the migration script
+1. In the Supabase Dashboard open the **SQL Editor**
+2. Click **New Query**
+3. Copy the **entire** contents of the `migration_to_new_schema.sql` file
+4. Paste it and click **Run**
+5. You will see: "Migration complete!"
 
-**ВНИМАНИЕ:** Миграция удалит все существующие данные в таблице plants!
+**WARNING:** The migration will delete all existing data in the plants table!
 
-### Шаг 3: Проверьте
-- Проверьте что таблица `plants` появилась в **Database** → **Tables**
-- Вы должны увидеть поля: id, user_id, name, location, **photo_url**, **water_frequency_days**, **last_watered_date**, notes
+### Step 3: Verify
+- Check that the `plants` table appears under **Database** → **Tables**
+- You should see the fields: id, user_id, name, location, **photo_url**, **water_frequency_days**, **last_watered_date**, notes
 
-## Готово! Теперь можно тестировать приложение:
+## Done! Now you can test the app:
 
-1. Откройте приложение (оно уже запущено на порту 5000)
-2. Зарегистрируйтесь с любым email (например, test@example.com)
-3. Начинайте добавлять растения!
+1. Open the app (it is already running on port 5000)
+2. Sign up with any email (for example, test@example.com)
+3. Start adding plants!
 
 ---
 
-## Что изменилось в миграции?
+## What does the migration change?
 
-**Старые поля -> Новые:**
-- `species` -> удалено (не нужно)
+**Old fields -> New:**
+- `species` -> removed (not needed)
 - `watering_frequency` -> `water_frequency_days`
 - `last_watered` -> `last_watered_date`
 - `image_url` -> `photo_url`
 
-## Что будет если пропустить миграцию?
+## What happens if you skip the migration?
 
-- Приложение не сможет добавлять растения
-- Ошибки при попытке полить растение
-- Неправильное отображение данных
+- The app will not be able to add plants
+- Errors when trying to water a plant
+- Data displayed incorrectly
 
-## Нужна помощь?
+## Need help?
 
-Смотрите `SETUP.md` для подробных инструкций.
+See `SETUP.md` for detailed instructions.
 
 ---
 
-**После выполнения 2 шагов приложение полностью готово к работе!**
+**After completing the 2 steps the app is fully ready to use!**

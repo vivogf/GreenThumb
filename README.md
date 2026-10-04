@@ -31,6 +31,25 @@ The project consists of two parts:
 - **Web PWA** (React + Vite) — installs onto a phone straight from the browser, works offline, sends push notifications;
 - **API** (Express) — the backend for the PWA and for the Kotlin Multiplatform mobile app.
 
+## Mobile app
+
+The project also includes a native Android app built with Kotlin Multiplatform and Compose. It works with this same API: plant photos, care schedules (watering, fertilizing, repotting, pruning), daily reminders at the hour you choose, and sign-in with a recovery key — no email, no analytics.
+
+Source: [github.com/vivogf/greenthumb-mobile](https://github.com/vivogf/greenthumb-mobile)
+
+<table>
+  <tr>
+    <td align="center"><img src="https://raw.githubusercontent.com/vivogf/greenthumb-mobile/main/docs/store-graphics/01-hero.png" width="160" alt="Overview"><br><sub>Overview</sub></td>
+    <td align="center"><img src="https://raw.githubusercontent.com/vivogf/greenthumb-mobile/main/docs/store-graphics/02-collection.png" width="160" alt="Collection"><br><sub>Collection</sub></td>
+    <td align="center"><img src="https://raw.githubusercontent.com/vivogf/greenthumb-mobile/main/docs/store-graphics/03-care.png" width="160" alt="Care schedules"><br><sub>Care schedules</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="https://raw.githubusercontent.com/vivogf/greenthumb-mobile/main/docs/store-graphics/04-reminders.png" width="160" alt="Reminders"><br><sub>Reminders</sub></td>
+    <td align="center"><img src="https://raw.githubusercontent.com/vivogf/greenthumb-mobile/main/docs/store-graphics/05-privacy.png" width="160" alt="Privacy"><br><sub>Privacy</sub></td>
+    <td align="center"><img src="https://raw.githubusercontent.com/vivogf/greenthumb-mobile/main/docs/store-graphics/06-add-plant.png" width="160" alt="Add a plant"><br><sub>Add a plant</sub></td>
+  </tr>
+</table>
+
 ## Features
 
 - **Watering tracker** — visual statuses (overdue / due today / in N days), sorted by urgency

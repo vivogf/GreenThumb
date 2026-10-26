@@ -9,8 +9,17 @@ Moves `greenthumb.xmpp.site` from the old server `<OLD_VPS_IP>` (app on Neon) to
 |---|---|---|
 | New VPS prepared (app, nginx, copied cert, `.env` parity, Neon rehearsal) | 2026-10-26 15:08 | infra worker (`m1-vps-prepare`) |
 | Pre-flip reboot test of the new VPS (boot at 15:10:33; pm2 `greenthumb` online, Postgres and nginx active after boot) | 2026-10-26 15:09:37 | infra worker |
-| DNS A record flipped to `<VPS_IP>` | _fill in_ | user |
-| **Cutover timestamp** (final Neon dump restored, new server takes writes) | _fill in_ | infra worker (`m1-cutover-finalize`) |
+| DNS A record flipped to `<VPS_IP>` (all five resolvers confirmed at 16:40, zone serial 2026102600) | 2026-10-26, before 16:40 | user |
+| Old app stopped (`pm2 stop greenthumb` on `<OLD_VPS_IP>`) | 2026-10-26 16:40:31 | infra worker (`m1-cutover-finalize`) |
+| **Cutover timestamp** (final Neon dump restored, new server takes writes) | 2026-10-26 16:41:00 | infra worker (`m1-cutover-finalize`) |
+| Fresh Let's Encrypt cert on the new VPS (valid to 2027-01-24) | 2026-10-26 16:41:48 | infra worker |
+| GreenThumb retired on the old server (cron commented, pm2 app deleted, site disabled, cert deleted) | 2026-10-26 16:47:15 | infra worker |
+
+Final sync record: Neon and the new DB both had users 66, plants 23, session 290 (288 not expired),
+expo_push_subscriptions 7, push_subscriptions 3, fcm_push_subscriptions 0; photo_url profile 15 `data:`,
+2 `http(s)`, 6 empty. The dump is `greenthumb-backups/pre-migration/neon-final-2026-10-26T16-40-42Z.dump`
+(2 552 443 bytes; local copy `/var/backups/greenthumb/neon-2026-10-26T16-40-42Z.dump`). After the swap,
+`migrate.mjs` re-recorded `001_baseline.sql` (a no-op on the Neon schema), taking its own pre-migration backup.
 
 ## State before the flip
 
@@ -72,22 +81,27 @@ bash scripts/deploy.sh --dry-run
    ```
    Retention keeps the newest 10 objects under `pre-migration/`, so this dump rotates out after 10 later migrations.
    Record the counts and the photo_url profile in the handoff, and write the cutover timestamp above.
+   The swap replaces the whole DB, so `schema_migrations` comes back empty: run
+   `ssh <SSH_USER>@<VPS_IP> 'cd /var/www/greenthumb && node scripts/ops/migrate.mjs && pm2 reload greenthumb --update-env'`.
 6. **Fresh certificate on the new VPS** (DNS now points here, so HTTP-01 works through the
    `/.well-known/acme-challenge/` location):
    ```bash
    ssh <SSH_USER>@<VPS_IP> 'certbot certonly --webroot -w /var/www/certbot -d greenthumb.xmpp.site \
-     --deploy-hook "systemctl reload nginx"'
+     --non-interactive --agree-tos --register-unsafely-without-email --deploy-hook "systemctl reload nginx"'
    ```
    Then point `ssl_certificate`/`ssl_certificate_key` in the site to
    `/etc/letsencrypt/live/greenthumb.xmpp.site/{fullchain,privkey}.pem`, run `nginx -t`, reload, verify with
-   `curl -vI https://greenthumb.xmpp.site` and `certbot renew --dry-run`. Remove `/etc/ssl/greenthumb/` afterwards.
-7. **Enable the push cron on the new VPS** (push `0 * * * *`, log `/var/log/greenthumb-push.log`). The backup line
+   `curl -vI https://greenthumb.xmpp.site` and `certbot renew --dry-run --no-random-sleep-on-renew` (without that flag a
+   non-interactive run first sleeps up to 8 minutes). Remove `/etc/ssl/greenthumb/` afterwards.
+7. **Enable the push cron on the new VPS** (push `0 * * * *`, log `/var/log/greenthumb-push.log`; the line is in
+   `deploy/cron/greenthumb.cron` and reads the API key from `.env` at run time). The backup line
    (`17 * * * *`, see `docs/ops/backup-restore.md`) is already installed.
 8. **Retire GreenThumb on the old server** (only these pieces; prosody, coturn, `xmpp.site`,
    `projects.xmpp.site` and their certs stay untouched). Back up each file before editing
    (`cp -a <file> <file>.bak.<UTC ts>`):
    - comment out the GreenThumb line in the root crontab;
-   - `pm2 delete greenthumb && pm2 save`;
+   - `pm2 delete greenthumb && pm2 save --force` (plain `pm2 save` skips an empty list and leaves the old app in
+     `dump.pm2`);
    - `rm /etc/nginx/sites-enabled/greenthumb` (keep `sites-available/greenthumb`), then
      `nginx -t && systemctl reload nginx`; check that `https://xmpp.site` and `https://projects.xmpp.site` still answer;
    - `certbot delete --cert-name greenthumb.xmpp.site` (only this cert).

@@ -1,4 +1,5 @@
 # Install as /etc/logrotate.d/greenthumb
+# Covers greenthumb-push.log, greenthumb-backup.log and greenthumb-photo-sweep.log.
 /var/log/greenthumb-*.log {
     # Ubuntu's /var/log is group-writable by syslog; logrotate refuses it without su.
     su root syslog

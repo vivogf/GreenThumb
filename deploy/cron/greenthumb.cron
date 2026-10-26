@@ -1,5 +1,7 @@
-# GreenThumb root crontab lines on the new VPS (install with the snippet in docs/ops/backup-restore.md).
+# GreenThumb root crontab lines on the new VPS (install with the snippet in docs/ops/photos.md).
 # Backup: hourly at :17, never overlapping (flock -n), credentials read from .env by the script itself.
 # Push reminders: hourly at :00; the API key is read from .env at run time, never stored in the crontab.
+# Photo sweep: daily at 03:40 UTC, deletes R2 photo objects older than 24 h that no DB row references.
 0 * * * * curl -sS --max-time 120 -w '\n' -X POST https://greenthumb.xmpp.site/api/push/check-plants -H "X-API-Key: $(grep '^PUSH_CHECK_API_KEY=' /var/www/greenthumb/.env | cut -d= -f2-)" >> /var/log/greenthumb-push.log 2>&1
 17 * * * * cd /var/www/greenthumb && flock -n /var/lock/greenthumb-backup.lock node scripts/ops/backup.mjs >> /var/log/greenthumb-backup.log 2>&1
+40 3 * * * cd /var/www/greenthumb && flock -n /var/lock/greenthumb-photo-sweep.lock node scripts/ops/sweep-photos.mjs >> /var/log/greenthumb-photo-sweep.log 2>&1

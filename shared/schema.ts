@@ -111,3 +111,9 @@ export const fcmPushSubscriptions = pgTable("fcm_push_subscriptions", {
 });
 
 export type FcmPushSubscription = typeof fcmPushSubscriptions.$inferSelect;
+
+// Written only by scripts/ops/migrate.mjs (one row per applied server/migrations/*.sql file).
+export const schemaMigrations = pgTable("schema_migrations", {
+  name: text("name").primaryKey(),
+  applied_at: timestamp("applied_at", { withTimezone: true }).defaultNow().notNull(),
+});

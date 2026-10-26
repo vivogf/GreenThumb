@@ -1,0 +1,3 @@
+# GreenThumb root crontab lines on the new VPS (install with the snippet in docs/ops/backup-restore.md).
+# Backup: hourly at :17, never overlapping (flock -n), credentials read from .env by the script itself.
+17 * * * * cd /var/www/greenthumb && flock -n /var/lock/greenthumb-backup.lock node scripts/ops/backup.mjs >> /var/log/greenthumb-backup.log 2>&1

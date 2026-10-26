@@ -14,6 +14,7 @@ Moves `greenthumb.xmpp.site` from the old server `<OLD_VPS_IP>` (app on Neon) to
 | **Cutover timestamp** (final Neon dump restored, new server takes writes) | 2026-10-26 16:41:00 | infra worker (`m1-cutover-finalize`) |
 | Fresh Let's Encrypt cert on the new VPS (valid to 2027-01-24) | 2026-10-26 16:41:48 | infra worker |
 | GreenThumb retired on the old server (cron commented, pm2 app deleted, site disabled, cert deleted) | 2026-10-26 16:47:15 | infra worker |
+| `PUSH_CHECK_API_KEY` rotated on the new VPS only (user-approved; 64 hex from `openssl rand -hex 32`, pm2 reloaded with `--update-env`; backup `.env.bak-pushkey-20261026T173722Z`, mode 600). The old server's rollback `.env` keeps the previous key; the push cron reads the key from `.env` at run time, so a rollback needs no crontab change | 2026-10-26 17:37:22 | infra worker (`m1-pushcheck-key-rotate`) |
 
 Final sync record: Neon and the new DB both had users 66, plants 23, session 290 (288 not expired),
 expo_push_subscriptions 7, push_subscriptions 3, fcm_push_subscriptions 0; photo_url profile 15 `data:`,

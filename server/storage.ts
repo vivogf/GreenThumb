@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { plants, users, pushSubscriptions, expoPushSubscriptions, fcmPushSubscriptions, type Plant, type User, type InsertUser, type PushSubscription, type InsertPushSubscription, type ExpoPushSubscription, type FcmPushSubscription } from "@shared/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { PlantCreate, PlantPatch } from "./plants/plantInput";
 
 const client = postgres(process.env.DATABASE_URL!);
@@ -302,11 +302,10 @@ export class DbStorage implements IStorage {
       await tx.delete(pushSubscriptions).where(eq(pushSubscriptions.user_id, userId));
       await tx.delete(expoPushSubscriptions).where(eq(expoPushSubscriptions.user_id, userId));
       await tx.delete(fcmPushSubscriptions).where(eq(fcmPushSubscriptions.user_id, userId));
-      // The session row (connect-pg-simple `session` table, keyed by sid, holds
-      // the userId in its JSON blob) isn't addressed by user_id, so the caller
-      // destroys the cookie session in the HTTP layer instead — drizzle-kit
-      // push would even offer to drop that table, which is why it's never in
-      // this schema.
+      // connect-pg-simple's `session` table is not in the drizzle schema
+      // (drizzle-kit push would offer to drop it), so it is addressed with raw
+      // SQL. Every session of the user goes, not only the caller's cookie.
+      await tx.execute(sql`DELETE FROM "session" WHERE sess->>'userId' = ${String(userId)}`);
       await tx.delete(users).where(eq(users.id, userId));
     });
   }

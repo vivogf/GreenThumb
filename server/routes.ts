@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { PLANT_NOT_FOUND, isPlantId, requireOwnedPlant } from "./plants/ownership";
 import { parsePlantCreate, parsePlantPatch } from "./plants/plantInput";
+import { createPushCheckGate } from "./push/checkGate";
 import { addDaysToDateString, isWaterDue, localDateInTz } from "@shared/care/userDate";
 import webpush from "web-push";
 import { Expo } from "expo-server-sdk";
@@ -438,8 +439,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete account (KMP app; Google Play requires in-app account deletion).
-  // Wipes every row tied to the user, then the user row itself. After a 200
-  // the cookie session is already destroyed server-side: the client's next
+  // Wipes every row tied to the user (all of the user's sessions included),
+  // then the user row itself. After a 200 every session is gone: the client's next
   // /api/auth/me with the old cookie gets 401, and login with the old
   // recovery key is impossible (the key was deleted with the row).
   app.delete("/api/auth/account", requireAuth, async (req: Request, res) => {
@@ -611,14 +612,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return `${y}-${m}-${d}`;
     }
   }
-  app.post("/api/push/check-plants", async (req: Request, res) => {
-    // Require either authentication or a secret API key
-    const apiKey = req.headers['x-api-key'];
-    const expectedKey = process.env.PUSH_CHECK_API_KEY || process.env.SESSION_SECRET;
-    
-    if (!req.session?.userId && apiKey !== expectedKey) {
-      return res.status(401).json({ error: "Authentication required" });
-    }
+  app.post("/api/push/check-plants", createPushCheckGate(), async (req: Request, res) => {
     try {
       // Use the slim variant (no photo_url) — the photo is base64 in the row
       // and pulling it every 5 minutes is what blew Neon's monthly transfer

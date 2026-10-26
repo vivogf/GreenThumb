@@ -1,7 +1,9 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertPlantSchema } from "@shared/schema";
+import { PLANT_NOT_FOUND, isPlantId, requireOwnedPlant } from "./plants/ownership";
+import { parsePlantCreate, parsePlantPatch } from "./plants/plantInput";
+import { addDaysToDateString, isWaterDue, localDateInTz } from "@shared/care/userDate";
 import webpush from "web-push";
 import { Expo } from "expo-server-sdk";
 import { getApps, initializeApp, cert, type App } from "firebase-admin/app";
@@ -43,13 +45,6 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
     process.env.VAPID_PUBLIC_KEY,
     process.env.VAPID_PRIVATE_KEY
   );
-}
-
-function toDateString(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
 }
 
 // Resolve with `null` if `p` hasn't settled within `ms`. A rejection still
@@ -210,17 +205,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Plant routes (protected)
+  // Plant routes (protected). Per-plant routes answer the same 404 for a
+  // foreign, missing or malformed id (architecture §1 invariant 2).
+  const findOwnedPlant = (id: string, userId: number) => storage.getPlantForUser(id, userId);
+
+  async function userTimezone(userId: number): Promise<string | null> {
+    const user = await storage.getUserById(userId);
+    return user?.timezone ?? null;
+  }
+
+  function plantRouteError(res: Response, label: string, error: unknown) {
+    console.error(`${label}:`, error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+
   app.post("/api/plants", requireAuth, async (req: Request, res) => {
     try {
       const userId = req.session.userId!;
-      const plantData = insertPlantSchema.parse(req.body);
-      const plantWithUser = { ...plantData, user_id: String(userId) };
-      const result = await storage.addPlant(plantWithUser);
+      const parsed = parsePlantCreate(req.body, await userTimezone(userId));
+      if (!parsed.ok) {
+        return res.status(400).json({ error: parsed.error });
+      }
+      const result = await storage.addPlant({ ...parsed.data, user_id: String(userId) });
       res.json(result);
-    } catch (error: any) {
-      console.error("Error adding plant:", error);
-      res.status(400).json({ error: error.message });
+    } catch (error) {
+      plantRouteError(res, "Error adding plant", error);
     }
   });
 
@@ -229,91 +238,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.session.userId!;
       const userPlants = await storage.getPlantsByUserId(String(userId));
       res.json(userPlants);
-    } catch (error: any) {
-      res.status(400).json({ error: error.message });
+    } catch (error) {
+      plantRouteError(res, "Error listing plants", error);
     }
   });
 
   app.patch("/api/plants/:id", requireAuth, async (req: Request, res) => {
     try {
-      const plant = await storage.updatePlant(req.params.id, req.body);
+      const userId = req.session.userId!;
+      // Ownership first: a foreign id must not reveal anything through 400s.
+      const owned = await requireOwnedPlant(findOwnedPlant, req.params.id, userId);
+      if (!owned) {
+        return res.status(404).json(PLANT_NOT_FOUND);
+      }
+      const parsed = parsePlantPatch(req.body, await userTimezone(userId));
+      if (!parsed.ok) {
+        return res.status(400).json({ error: parsed.error });
+      }
+      if (Object.keys(parsed.data).length === 0) {
+        return res.json(owned);
+      }
+      const plant = await storage.updatePlantForUser(owned.id, userId, parsed.data);
+      if (!plant) {
+        return res.status(404).json(PLANT_NOT_FOUND);
+      }
       res.json(plant);
-    } catch (error: any) {
-      res.status(400).json({ error: error.message });
+    } catch (error) {
+      plantRouteError(res, "Error updating plant", error);
     }
   });
 
   app.delete("/api/plants/:id", requireAuth, async (req: Request, res) => {
     try {
-      await storage.deletePlant(req.params.id);
+      const userId = req.session.userId!;
+      const id = req.params.id;
+      if (!isPlantId(id) || !(await storage.deletePlantForUser(id, userId))) {
+        return res.status(404).json(PLANT_NOT_FOUND);
+      }
       res.json({ success: true });
-    } catch (error: any) {
-      res.status(400).json({ error: error.message });
+    } catch (error) {
+      plantRouteError(res, "Error deleting plant", error);
     }
   });
 
-  // Mass actions for plants
+  // Mass actions use the caller's local calendar date (users.timezone, NULL → Moscow).
+  async function setDuePlantsWatered(userId: number, dateFor: (today: string) => string): Promise<number> {
+    const user = await storage.getUserById(userId);
+    const today = localDateInTz(new Date(), user?.timezone);
+    const userPlants = await storage.getPlantsByUserId(String(userId));
+    const dueIds = userPlants
+      .filter((plant) => isWaterDue(plant.last_watered_date, plant.water_frequency_days, today))
+      .map((plant) => plant.id);
+    return storage.setLastWateredForUser(dueIds, userId, dateFor(today));
+  }
+
   app.post("/api/plants/water-all", requireAuth, async (req: Request, res) => {
     try {
-      const userId = req.session.userId!;
-      const userPlants = await storage.getPlantsByUserId(String(userId));
-      const today = startOfDay(new Date());
-      
-      // Find plants that need watering (overdue or due today)
-      const plantsNeedingWater = userPlants.filter((plant) => {
-        const lastWatered = startOfDay(new Date(plant.last_watered_date));
-        const nextWateringDate = addDays(lastWatered, plant.water_frequency_days);
-        return nextWateringDate <= today;
-      });
-      
-      // Water all plants that need it
-      await Promise.all(
-        plantsNeedingWater.map((plant) =>
-          storage.updatePlant(plant.id, {
-            last_watered_date: toDateString(new Date()),
-          })
-        )
-      );
-      
-      res.json({ success: true, count: plantsNeedingWater.length });
-    } catch (error: any) {
-      console.error("Error watering all plants:", error);
-      res.status(400).json({ error: error.message });
+      const count = await setDuePlantsWatered(req.session.userId!, (today) => today);
+      res.json({ success: true, count });
+    } catch (error) {
+      plantRouteError(res, "Error watering all plants", error);
     }
   });
 
   app.post("/api/plants/postpone-all", requireAuth, async (req: Request, res) => {
     try {
-      const userId = req.session.userId!;
-      const userPlants = await storage.getPlantsByUserId(String(userId));
-      const today = startOfDay(new Date());
-      
-      // Find plants that need watering (overdue or due today)
-      const plantsNeedingWater = userPlants.filter((plant) => {
-        const lastWatered = startOfDay(new Date(plant.last_watered_date));
-        const nextWateringDate = addDays(lastWatered, plant.water_frequency_days);
-        return nextWateringDate <= today;
-      });
-      
-      // Postpone by setting last_watered_date to yesterday
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      
-      await Promise.all(
-        plantsNeedingWater.map((plant) =>
-          storage.updatePlant(plant.id, {
-            last_watered_date: toDateString(yesterday),
-          })
-        )
-      );
-      
-      res.json({ success: true, count: plantsNeedingWater.length });
-    } catch (error: any) {
-      console.error("Error postponing all plants:", error);
-      res.status(400).json({ error: error.message });
+      // Postpone = pretend the plant was watered yesterday (user-local).
+      const count = await setDuePlantsWatered(req.session.userId!, (today) => addDaysToDateString(today, -1));
+      res.json({ success: true, count });
+    } catch (error) {
+      plantRouteError(res, "Error postponing all plants", error);
     }
   });
-
   // Push notification routes
   app.post("/api/push/subscribe", requireAuth, async (req: Request, res) => {
     try {

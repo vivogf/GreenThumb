@@ -19,6 +19,7 @@ import { ArrowLeft, Upload, X, CalendarIcon, Droplets, Sprout, Shovel, Scissors 
 import { useState } from 'react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { localDateString, parseCareDate } from '@shared/care/userDate';
 
 export default function AddPlant() {
   const [, setLocation] = useLocation();
@@ -36,7 +37,7 @@ export default function AddPlant() {
       location: '',
       photo_url: '',
       water_frequency_days: 7,
-      last_watered_date: new Date().toISOString(),
+      last_watered_date: localDateString(new Date()),
       fertilize_frequency_days: undefined,
       last_fertilized_date: undefined,
       repot_frequency_months: undefined,
@@ -313,7 +314,7 @@ export default function AddPlant() {
                             data-testid="button-last-watered-date"
                           >
                             {field.value ? (
-                              format(new Date(field.value), "PPP")
+                              format(parseCareDate(field.value), "PPP")
                             ) : (
                               <span>{t('addPlant.pickDate')}</span>
                             )}
@@ -324,8 +325,8 @@ export default function AddPlant() {
                       <PopoverContent className="w-auto p-0" align="start">
                         <Calendar
                           mode="single"
-                          selected={field.value ? new Date(field.value) : undefined}
-                          onSelect={(date) => field.onChange(date?.toISOString())}
+                          selected={field.value ? parseCareDate(field.value) : undefined}
+                          onSelect={(date) => field.onChange(date ? localDateString(date) : undefined)}
                           disabled={(date) =>
                             date > new Date() || date < new Date("1900-01-01")
                           }
@@ -386,7 +387,7 @@ export default function AddPlant() {
                                 data-testid="button-last-fertilized-date"
                               >
                                 {field.value ? (
-                                  format(new Date(field.value), "PPP")
+                                  format(parseCareDate(field.value), "PPP")
                                 ) : (
                                   <span>{t('addPlant.pickDate')}</span>
                                 )}
@@ -397,8 +398,8 @@ export default function AddPlant() {
                           <PopoverContent className="w-auto p-0" align="start">
                             <Calendar
                               mode="single"
-                              selected={field.value ? new Date(field.value) : undefined}
-                              onSelect={(date) => field.onChange(date?.toISOString())}
+                              selected={field.value ? parseCareDate(field.value) : undefined}
+                              onSelect={(date) => field.onChange(date ? localDateString(date) : undefined)}
                               disabled={(date) =>
                                 date > new Date() || date < new Date("1900-01-01")
                               }
@@ -451,7 +452,7 @@ export default function AddPlant() {
                                 data-testid="button-last-repotted-date"
                               >
                                 {field.value ? (
-                                  format(new Date(field.value), "PPP")
+                                  format(parseCareDate(field.value), "PPP")
                                 ) : (
                                   <span>{t('addPlant.pickDate')}</span>
                                 )}
@@ -462,8 +463,8 @@ export default function AddPlant() {
                           <PopoverContent className="w-auto p-0" align="start">
                             <Calendar
                               mode="single"
-                              selected={field.value ? new Date(field.value) : undefined}
-                              onSelect={(date) => field.onChange(date?.toISOString())}
+                              selected={field.value ? parseCareDate(field.value) : undefined}
+                              onSelect={(date) => field.onChange(date ? localDateString(date) : undefined)}
                               disabled={(date) =>
                                 date > new Date() || date < new Date("1900-01-01")
                               }
@@ -516,7 +517,7 @@ export default function AddPlant() {
                                 data-testid="button-last-pruned-date"
                               >
                                 {field.value ? (
-                                  format(new Date(field.value), "PPP")
+                                  format(parseCareDate(field.value), "PPP")
                                 ) : (
                                   <span>{t('addPlant.pickDate')}</span>
                                 )}
@@ -527,8 +528,8 @@ export default function AddPlant() {
                           <PopoverContent className="w-auto p-0" align="start">
                             <Calendar
                               mode="single"
-                              selected={field.value ? new Date(field.value) : undefined}
-                              onSelect={(date) => field.onChange(date?.toISOString())}
+                              selected={field.value ? parseCareDate(field.value) : undefined}
+                              onSelect={(date) => field.onChange(date ? localDateString(date) : undefined)}
                               disabled={(date) =>
                                 date > new Date() || date < new Date("1900-01-01")
                               }

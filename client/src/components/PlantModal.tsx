@@ -19,6 +19,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { localDateString, parseCareDate } from '@shared/care/userDate';
 
 interface PlantModalProps {
   plantId: string | null;
@@ -103,7 +104,7 @@ export function PlantModal({ plantId, isOpen, onClose, originRect }: PlantModalP
   const waterPlantMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest('PATCH', `/api/plants/${plant?.id}`, {
-        last_watered_date: new Date().toISOString(),
+        last_watered_date: localDateString(new Date()),
       });
       return res.json();
     },
@@ -119,7 +120,7 @@ export function PlantModal({ plantId, isOpen, onClose, originRect }: PlantModalP
   const fertilizePlantMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest('PATCH', `/api/plants/${plant?.id}`, {
-        last_fertilized_date: new Date().toISOString(),
+        last_fertilized_date: localDateString(new Date()),
       });
       return res.json();
     },
@@ -135,7 +136,7 @@ export function PlantModal({ plantId, isOpen, onClose, originRect }: PlantModalP
   const repotPlantMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest('PATCH', `/api/plants/${plant?.id}`, {
-        last_repotted_date: new Date().toISOString(),
+        last_repotted_date: localDateString(new Date()),
       });
       return res.json();
     },
@@ -151,7 +152,7 @@ export function PlantModal({ plantId, isOpen, onClose, originRect }: PlantModalP
   const prunePlantMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest('PATCH', `/api/plants/${plant?.id}`, {
-        last_pruned_date: new Date().toISOString(),
+        last_pruned_date: localDateString(new Date()),
       });
       return res.json();
     },
@@ -168,7 +169,7 @@ export function PlantModal({ plantId, isOpen, onClose, originRect }: PlantModalP
   
   const getPlantStatus = () => {
     if (!plant) return null;
-    const lastWateredDate = startOfDay(new Date(plant.last_watered_date));
+    const lastWateredDate = startOfDay(parseCareDate(plant.last_watered_date));
     const nextWateringDate = addDays(lastWateredDate, plant.water_frequency_days);
     const isOverdue = nextWateringDate < today;
     const isDueToday = nextWateringDate.getTime() === today.getTime();
@@ -204,16 +205,16 @@ export function PlantModal({ plantId, isOpen, onClose, originRect }: PlantModalP
 
   const status = getPlantStatus();
   const fertilizeStatus = plant ? getCareStatus(
-    plant.last_fertilized_date ? new Date(plant.last_fertilized_date) : null,
+    plant.last_fertilized_date ? parseCareDate(plant.last_fertilized_date) : null,
     plant.fertilize_frequency_days
   ) : null;
   const repotStatus = plant ? getCareStatus(
-    plant.last_repotted_date ? new Date(plant.last_repotted_date) : null,
+    plant.last_repotted_date ? parseCareDate(plant.last_repotted_date) : null,
     undefined,
     plant.repot_frequency_months
   ) : null;
   const pruneStatus = plant ? getCareStatus(
-    plant.last_pruned_date ? new Date(plant.last_pruned_date) : null,
+    plant.last_pruned_date ? parseCareDate(plant.last_pruned_date) : null,
     undefined,
     plant.prune_frequency_months
   ) : null;

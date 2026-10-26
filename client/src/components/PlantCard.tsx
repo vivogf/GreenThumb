@@ -8,6 +8,7 @@ import { addDays, startOfDay } from 'date-fns';
 import { MapPin, Droplets, Heart, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useRef } from 'react';
+import { parseCareDate } from '@shared/care/userDate';
 
 export type LayoutMode = 'card' | 'compact';
 
@@ -104,7 +105,7 @@ function WaterButton({ onWater, isWatering, needsWater, fullWidth, compact }: Wa
 
 export function PlantCard({ plant, onWater, isWatering, onClick, layout = 'card' }: PlantCardProps) {
   const { t } = useTranslation();
-  const lastWateredDate = startOfDay(new Date(plant.last_watered_date));
+  const lastWateredDate = startOfDay(parseCareDate(plant.last_watered_date));
   const nextWateringDate = addDays(lastWateredDate, plant.water_frequency_days);
   const today = startOfDay(new Date());
   const isOverdue = nextWateringDate < today;

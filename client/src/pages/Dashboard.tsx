@@ -12,6 +12,7 @@ import { motion, LayoutGroup } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { localDateString, parseCareDate } from '@shared/care/userDate';
 
 type SortOption = 'watering' | 'name' | 'location' | 'date';
 
@@ -48,7 +49,7 @@ export default function Dashboard() {
   const waterPlantMutation = useMutation({
     mutationFn: async (plantId: string) => {
       const res = await apiRequest('PATCH', `/api/plants/${plantId}`, {
-        last_watered_date: new Date().toISOString(),
+        last_watered_date: localDateString(new Date()),
       });
       return res.json();
     },
@@ -61,7 +62,7 @@ export default function Dashboard() {
       queryClient.setQueryData<Plant[]>(['/api/plants'], (old) =>
         old?.map((plant) =>
           plant.id === plantId
-            ? { ...plant, last_watered_date: new Date().toISOString() }
+            ? { ...plant, last_watered_date: localDateString(new Date()) }
             : plant
         ) || []
       );
@@ -146,8 +147,8 @@ export default function Dashboard() {
   const sortedPlants = [...filteredPlants].sort((a, b) => {
     switch (sortBy) {
       case 'watering': {
-        const aNext = addDays(startOfDay(new Date(a.last_watered_date)), a.water_frequency_days);
-        const bNext = addDays(startOfDay(new Date(b.last_watered_date)), b.water_frequency_days);
+        const aNext = addDays(startOfDay(parseCareDate(a.last_watered_date)), a.water_frequency_days);
+        const bNext = addDays(startOfDay(parseCareDate(b.last_watered_date)), b.water_frequency_days);
         return aNext.getTime() - bNext.getTime();
       }
       case 'name':
@@ -165,13 +166,13 @@ export default function Dashboard() {
   });
 
   const needsWater = sortedPlants.filter((plant) => {
-    const lastWatered = startOfDay(new Date(plant.last_watered_date));
+    const lastWatered = startOfDay(parseCareDate(plant.last_watered_date));
     const nextWateringDate = addDays(lastWatered, plant.water_frequency_days);
     return nextWateringDate <= today;
   });
 
   const allGood = sortedPlants.filter((plant) => {
-    const lastWatered = startOfDay(new Date(plant.last_watered_date));
+    const lastWatered = startOfDay(parseCareDate(plant.last_watered_date));
     const nextWateringDate = addDays(lastWatered, plant.water_frequency_days);
     return nextWateringDate > today;
   });

@@ -1,7 +1,8 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { plants, users, pushSubscriptions, expoPushSubscriptions, fcmPushSubscriptions, type Plant, type InsertPlant, type User, type InsertUser, type PushSubscription, type InsertPushSubscription, type ExpoPushSubscription, type FcmPushSubscription } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { plants, users, pushSubscriptions, expoPushSubscriptions, fcmPushSubscriptions, type Plant, type User, type InsertUser, type PushSubscription, type InsertPushSubscription, type ExpoPushSubscription, type FcmPushSubscription } from "@shared/schema";
+import { and, eq, inArray } from "drizzle-orm";
+import type { PlantCreate, PlantPatch } from "./plants/plantInput";
 
 const client = postgres(process.env.DATABASE_URL!);
 const db = drizzle(client);
@@ -18,10 +19,12 @@ export interface IStorage {
   regenerateRecoveryKey(userId: number): Promise<User | null>;
   
   // Plant methods
-  addPlant(plant: InsertPlant & { user_id: string }): Promise<Plant>;
+  addPlant(plant: PlantCreate & { user_id: string }): Promise<Plant>;
   getPlantsByUserId(userId: string): Promise<Plant[]>;
-  updatePlant(id: string, plant: Partial<InsertPlant>): Promise<Plant>;
-  deletePlant(id: string): Promise<void>;
+  getPlantForUser(id: string, userId: number): Promise<Plant | null>;
+  updatePlantForUser(id: string, userId: number, patch: PlantPatch): Promise<Plant | null>;
+  deletePlantForUser(id: string, userId: number): Promise<boolean>;
+  setLastWateredForUser(ids: string[], userId: number, date: string): Promise<number>;
   getAllPlants(): Promise<Plant[]>;
   // Same as getAllPlants() but excludes photo_url (base64 blob, ~50-200 KB per
   // row). Used by the check-plants cron in routes.ts where the photo isn't
@@ -121,7 +124,7 @@ export class DbStorage implements IStorage {
   }
 
   // Plant methods
-  async addPlant(plant: InsertPlant & { user_id: string }): Promise<Plant> {
+  async addPlant(plant: PlantCreate & { user_id: string }): Promise<Plant> {
     const [result] = await db.insert(plants).values(plant).returning();
     return result;
   }
@@ -133,20 +136,41 @@ export class DbStorage implements IStorage {
       .where(eq(plants.user_id, userId));
   }
 
-  async updatePlant(
-    id: string,
-    plant: Partial<InsertPlant>
-  ): Promise<Plant> {
-    const [result] = await db
-      .update(plants)
-      .set(plant)
-      .where(eq(plants.id, id as any))
-      .returning();
-    return result;
+  // Every per-plant read and write carries user_id in the WHERE clause, so a
+  // route that forgets the ownership check still cannot touch another user's row.
+  async getPlantForUser(id: string, userId: number): Promise<Plant | null> {
+    const [plant] = await db
+      .select()
+      .from(plants)
+      .where(and(eq(plants.id, id), eq(plants.user_id, String(userId))));
+    return plant || null;
   }
 
-  async deletePlant(id: string): Promise<void> {
-    await db.delete(plants).where(eq(plants.id, id as any));
+  async updatePlantForUser(id: string, userId: number, patch: PlantPatch): Promise<Plant | null> {
+    const [result] = await db
+      .update(plants)
+      .set(patch)
+      .where(and(eq(plants.id, id), eq(plants.user_id, String(userId))))
+      .returning();
+    return result || null;
+  }
+
+  async deletePlantForUser(id: string, userId: number): Promise<boolean> {
+    const deleted = await db
+      .delete(plants)
+      .where(and(eq(plants.id, id), eq(plants.user_id, String(userId))))
+      .returning({ id: plants.id });
+    return deleted.length > 0;
+  }
+
+  async setLastWateredForUser(ids: string[], userId: number, date: string): Promise<number> {
+    if (ids.length === 0) return 0;
+    const updated = await db
+      .update(plants)
+      .set({ last_watered_date: date })
+      .where(and(inArray(plants.id, ids), eq(plants.user_id, String(userId))))
+      .returning({ id: plants.id });
+    return updated.length;
   }
 
   async getAllPlants(): Promise<Plant[]> {

@@ -1,5 +1,7 @@
 # Install as /etc/logrotate.d/greenthumb
 /var/log/greenthumb-*.log {
+    # Ubuntu's /var/log is group-writable by syslog; logrotate refuses it without su.
+    su root syslog
     weekly
     rotate 8
     compress

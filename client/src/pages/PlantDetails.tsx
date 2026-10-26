@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
+import { PlantPhoto } from '@/components/PlantPhoto';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { ArrowLeft, MapPin, Droplets, Calendar, Trash2, Sprout, Shovel, Scissors, Settings, X, Check, Pencil } from 'lucide-react';
 import { format, addDays, addMonths, formatDistanceToNow } from 'date-fns';
@@ -317,11 +318,11 @@ export default function PlantDetails() {
 
       <Card className="overflow-hidden">
         <div className="aspect-video w-full overflow-hidden bg-muted">
-          <img
+          <PlantPhoto
             src={plant.photo_url}
             alt={plant.name}
             className="w-full h-full object-cover"
-            data-testid="img-plant-photo"
+            testId="img-plant-photo"
           />
         </div>
         <CardHeader>

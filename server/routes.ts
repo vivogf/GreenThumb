@@ -4,6 +4,9 @@ import { storage } from "./storage";
 import { PLANT_NOT_FOUND, isPlantId, requireOwnedPlant } from "./plants/ownership";
 import { parsePlantCreate, parsePlantPatch } from "./plants/plantInput";
 import { createPushCheckGate } from "./push/checkGate";
+import { getPhotoRuntime } from "./photos/store";
+import { keyForPhotoUrl } from "./photos/keys";
+import { preparePhotoChange, removePhotoObjects } from "./photos/photoChange";
 import { addDaysToDateString, isWaterDue, localDateInTz } from "@shared/care/userDate";
 import webpush from "web-push";
 import { Expo } from "expo-server-sdk";
@@ -220,6 +223,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.status(500).json({ error: "Internal server error" });
   }
 
+  function photoContext() {
+    const runtime = getPhotoRuntime();
+    return { store: runtime?.store ?? null, publicBaseUrl: runtime?.publicBaseUrl ?? null };
+  }
+
   app.post("/api/plants", requireAuth, async (req: Request, res) => {
     try {
       const userId = req.session.userId!;
@@ -227,7 +235,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!parsed.ok) {
         return res.status(400).json({ error: parsed.error });
       }
-      const result = await storage.addPlant({ ...parsed.data, user_id: String(userId) });
+      const photos = photoContext();
+      const change = await preparePhotoChange(parsed.data.photo_url, null, photos);
+      if (!change.ok) {
+        return res.status(change.status).json({ error: change.error });
+      }
+      let result;
+      try {
+        result = await storage.addPlant({ ...parsed.data, photo_url: change.photoUrl ?? "", user_id: String(userId) });
+      } catch (error) {
+        await removePhotoObjects(photos.store, [change.uploadedKey]);
+        throw error;
+      }
       res.json(result);
     } catch (error) {
       plantRouteError(res, "Error adding plant", error);
@@ -256,13 +275,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!parsed.ok) {
         return res.status(400).json({ error: parsed.error });
       }
-      if (Object.keys(parsed.data).length === 0) {
+      const photos = photoContext();
+      const change = await preparePhotoChange(parsed.data.photo_url, owned.photo_url, photos);
+      if (!change.ok) {
+        return res.status(change.status).json({ error: change.error });
+      }
+      const patch = { ...parsed.data };
+      if (change.photoUrl === undefined) delete patch.photo_url;
+      else patch.photo_url = change.photoUrl;
+      if (Object.keys(patch).length === 0) {
         return res.json(owned);
       }
-      const plant = await storage.updatePlantForUser(owned.id, userId, parsed.data);
+      let plant;
+      try {
+        plant = await storage.updatePlantForUser(owned.id, userId, patch);
+      } catch (error) {
+        await removePhotoObjects(photos.store, [change.uploadedKey]);
+        throw error;
+      }
       if (!plant) {
+        await removePhotoObjects(photos.store, [change.uploadedKey]);
         return res.status(404).json(PLANT_NOT_FOUND);
       }
+      await removePhotoObjects(photos.store, [change.obsoleteKey]);
       res.json(plant);
     } catch (error) {
       plantRouteError(res, "Error updating plant", error);
@@ -273,9 +308,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.session.userId!;
       const id = req.params.id;
-      if (!isPlantId(id) || !(await storage.deletePlantForUser(id, userId))) {
+      const deleted = isPlantId(id) ? await storage.deletePlantForUser(id, userId) : null;
+      if (!deleted) {
         return res.status(404).json(PLANT_NOT_FOUND);
       }
+      const photos = photoContext();
+      await removePhotoObjects(photos.store, [keyForPhotoUrl(deleted.photo_url, photos.publicBaseUrl)]);
       res.json({ success: true });
     } catch (error) {
       plantRouteError(res, "Error deleting plant", error);
@@ -446,7 +484,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/auth/account", requireAuth, async (req: Request, res) => {
     try {
       const userId = req.session.userId!;
-      await storage.deleteAccountCascade(userId);
+      const photoUrls = await storage.deleteAccountCascade(userId);
+      const photos = photoContext();
+      await removePhotoObjects(photos.store, photoUrls.map((url) => keyForPhotoUrl(url, photos.publicBaseUrl)));
       req.session.destroy((err) => {
         if (err) {
           console.error("Account deletion: session destroy failed:", err);

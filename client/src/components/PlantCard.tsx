@@ -9,6 +9,7 @@ import { MapPin, Droplets, Heart, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useRef } from 'react';
 import { parseCareDate } from '@shared/care/userDate';
+import { PlantPhoto } from '@/components/PlantPhoto';
 
 export type LayoutMode = 'card' | 'compact';
 
@@ -143,14 +144,7 @@ export function PlantCard({ plant, onWater, isWatering, onClick, layout = 'card'
       <Card className="overflow-hidden hover-elevate cursor-pointer transition-all" onClick={handleClick}>
         <div className="flex items-center gap-3 p-3">
           <div className="relative w-14 h-14 flex-shrink-0 rounded-md overflow-hidden bg-muted">
-            <img
-              src={plant.photo_url}
-              alt={plant.name}
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 24 24" fill="none" stroke="%232E7D32" stroke-width="2"%3E%3Cpath d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"%3E%3C/path%3E%3Cpath d="M7.5 12H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-2.5"%3E%3C/path%3E%3C/svg%3E';
-              }}
-            />
+            <PlantPhoto src={plant.photo_url} alt={plant.name} className="w-full h-full object-cover" />
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-medium text-foreground truncate" data-testid={`text-plant-name-${plant.id}`}>
@@ -179,14 +173,7 @@ export function PlantCard({ plant, onWater, isWatering, onClick, layout = 'card'
   return (
     <Card className="overflow-hidden hover-elevate cursor-pointer transition-all" onClick={handleClick}>
       <div className="relative aspect-video overflow-hidden bg-muted">
-        <img
-          src={plant.photo_url}
-          alt={plant.name}
-          className="w-full h-full object-cover"
-          onError={(e) => {
-            (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 24 24" fill="none" stroke="%232E7D32" stroke-width="2"%3E%3Cpath d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"%3E%3C/path%3E%3Cpath d="M7.5 12H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-2.5"%3E%3C/path%3E%3C/svg%3E';
-          }}
-        />
+        <PlantPhoto src={plant.photo_url} alt={plant.name} className="w-full h-full object-cover" />
       </div>
       <CardContent className="p-3 space-y-2">
         <h3 className="text-base font-medium text-foreground truncate" data-testid={`text-plant-name-${plant.id}`}>

@@ -23,7 +23,8 @@ export interface IStorage {
   getPlantsByUserId(userId: string): Promise<Plant[]>;
   getPlantForUser(id: string, userId: number): Promise<Plant | null>;
   updatePlantForUser(id: string, userId: number, patch: PlantPatch): Promise<Plant | null>;
-  deletePlantForUser(id: string, userId: number): Promise<boolean>;
+  /** Returns the deleted row's photo_url, or null when nothing was deleted. */
+  deletePlantForUser(id: string, userId: number): Promise<{ photo_url: string } | null>;
   setLastWateredForUser(ids: string[], userId: number, date: string): Promise<number>;
   getAllPlants(): Promise<Plant[]>;
   // Same as getAllPlants() but excludes photo_url (base64 blob, ~50-200 KB per
@@ -52,9 +53,9 @@ export interface IStorage {
 
   // Account deletion (KMP app, Google Play requirement): removes every row
   // that belongs to the user in one transaction, then the user row itself.
-  // Plant photos live in plants.photo_url (data-URI), so there is no separate
-  // file storage to clean up.
-  deleteAccountCascade(userId: number): Promise<void>;
+  // Returns the photo_url values of the deleted plants so the caller can
+  // remove their objects from photo storage after the commit.
+  deleteAccountCascade(userId: number): Promise<string[]>;
 
   ping(): Promise<void>;
 }
@@ -155,12 +156,12 @@ export class DbStorage implements IStorage {
     return result || null;
   }
 
-  async deletePlantForUser(id: string, userId: number): Promise<boolean> {
-    const deleted = await db
+  async deletePlantForUser(id: string, userId: number): Promise<{ photo_url: string } | null> {
+    const [deleted] = await db
       .delete(plants)
       .where(and(eq(plants.id, id), eq(plants.user_id, String(userId))))
-      .returning({ id: plants.id });
-    return deleted.length > 0;
+      .returning({ photo_url: plants.photo_url });
+    return deleted ?? null;
   }
 
   async setLastWateredForUser(ids: string[], userId: number, date: string): Promise<number> {
@@ -296,9 +297,12 @@ export class DbStorage implements IStorage {
     }));
   }
 
-  async deleteAccountCascade(userId: number): Promise<void> {
-    await db.transaction(async (tx) => {
-      await tx.delete(plants).where(eq(plants.user_id, String(userId)));
+  async deleteAccountCascade(userId: number): Promise<string[]> {
+    return await db.transaction(async (tx) => {
+      const deletedPlants = await tx
+        .delete(plants)
+        .where(eq(plants.user_id, String(userId)))
+        .returning({ photo_url: plants.photo_url });
       await tx.delete(pushSubscriptions).where(eq(pushSubscriptions.user_id, userId));
       await tx.delete(expoPushSubscriptions).where(eq(expoPushSubscriptions.user_id, userId));
       await tx.delete(fcmPushSubscriptions).where(eq(fcmPushSubscriptions.user_id, userId));
@@ -307,6 +311,7 @@ export class DbStorage implements IStorage {
       // SQL. Every session of the user goes, not only the caller's cookie.
       await tx.execute(sql`DELETE FROM "session" WHERE sess->>'userId' = ${String(userId)}`);
       await tx.delete(users).where(eq(users.id, userId));
+      return deletedPlants.map((p) => p.photo_url);
     });
   }
 

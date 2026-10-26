@@ -5,6 +5,7 @@ import type { Plant } from '@shared/schema';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import { PlantPhoto } from '@/components/PlantPhoto';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { X, MapPin, Droplets, Calendar, Trash2, Sprout, Shovel, Scissors, ArrowLeft } from 'lucide-react';
 import { format, addDays, addMonths, formatDistanceToNow, startOfDay } from 'date-fns';
@@ -259,12 +260,16 @@ export function PlantModal({ plantId, isOpen, onClose, originRect }: PlantModalP
             className="fixed inset-4 md:inset-8 lg:inset-16 bg-background rounded-xl z-50 overflow-hidden flex flex-col shadow-2xl"
           >
             <div className="relative h-48 md:h-64 lg:h-80 overflow-hidden bg-muted flex-shrink-0">
-              <motion.img
-                src={plant.photo_url}
-                alt={plant.name}
-                className="w-full h-full object-cover"
-                layoutId={`plant-image-${plant.id}`}
-              />
+              {plant.photo_url ? (
+                <motion.img
+                  src={plant.photo_url}
+                  alt={plant.name}
+                  className="w-full h-full object-cover"
+                  layoutId={`plant-image-${plant.id}`}
+                />
+              ) : (
+                <PlantPhoto src="" alt={plant.name} className="w-full h-full" />
+              )}
               <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
               <Button
                 variant="ghost"

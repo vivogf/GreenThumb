@@ -8,6 +8,8 @@ import { registerRoutes } from "./routes";
 import { storage } from "./storage";
 import { createHealthHandler, readRevision, DEFAULT_REVISION_FILE } from "./health";
 import { jsonBodyParser, jsonErrorHandler, urlencodedBodyParser } from "./http";
+import { createPhotoHandler, photoPathNotFound } from "./photos/route";
+import { getPhotoRuntime } from "./photos/store";
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -39,6 +41,11 @@ app.get("/api/health", createHealthHandler({
   pingDb: () => storage.ping(),
   readRevision: () => readRevision(process.env.REVISION_FILE || DEFAULT_REVISION_FILE),
 }));
+
+// Photos are public by unguessable URL: no session (no Set-Cookie, nginx caches them),
+// and every other /photos path is a 404 instead of the SPA fallback.
+app.get("/photos/:file", createPhotoHandler(() => getPhotoRuntime()?.store ?? null));
+app.all(["/photos", "/photos/*"], photoPathNotFound);
 
 const PgStore = connectPgSimple(session);
 app.use(session({

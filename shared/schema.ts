@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pgTable, text, integer, timestamp, uuid, serial } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, uuid, serial, date, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 
 // Users table - anonymous UUID-based authentication
@@ -41,6 +41,9 @@ export const plants = pgTable("plants", {
   prune_frequency_months: integer("prune_frequency_months"),
   last_pruned_date: text("last_pruned_date"),
   notes: text("notes").default(""),
+  // Offline catalog id and scientific name (migration 003). The server never validates them against a catalog.
+  species_id: text("species_id"),
+  species_name: text("species_name"),
   created_at: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -111,6 +114,17 @@ export const fcmPushSubscriptions = pgTable("fcm_push_subscriptions", {
 });
 
 export type FcmPushSubscription = typeof fcmPushSubscriptions.$inferSelect;
+
+// Daily counters for paid/limited providers (migration 003). user_id is the users.id as text, or
+// '__deleted__' for counts folded in from deleted accounts so the day's total never drops.
+export const apiUsage = pgTable("api_usage", {
+  day: date("day", { mode: "string" }).notNull(),
+  user_id: text("user_id").notNull(),
+  kind: text("kind").notNull(),
+  count: integer("count").notNull().default(0),
+}, (t) => [primaryKey({ columns: [t.day, t.user_id, t.kind] })]);
+
+export type ApiUsage = typeof apiUsage.$inferSelect;
 
 // Written only by scripts/ops/migrate.mjs (one row per applied server/migrations/*.sql file).
 export const schemaMigrations = pgTable("schema_migrations", {

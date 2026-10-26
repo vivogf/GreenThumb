@@ -20,6 +20,9 @@ const plantFields = {
   prune_frequency_months: optionalInt(120),
   last_pruned_date: careDateText.nullable(),
   notes: z.string().max(10000).nullable(),
+  // Catalog id and scientific name (architecture §2.7); the server does not know the catalog.
+  species_id: z.string().trim().min(1).max(100).nullable(),
+  species_name: z.string().trim().min(1).max(200).nullable(),
 };
 
 const patchSchema = z.object(plantFields).partial();
@@ -35,6 +38,8 @@ const createSchema = z.object({
   last_repotted_date: plantFields.last_repotted_date.optional(),
   prune_frequency_months: plantFields.prune_frequency_months.optional(),
   last_pruned_date: plantFields.last_pruned_date.optional(),
+  species_id: plantFields.species_id.optional(),
+  species_name: plantFields.species_name.optional(),
 });
 
 export type PlantPatch = z.infer<typeof patchSchema>;

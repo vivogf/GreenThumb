@@ -1,13 +1,16 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { plants, users, pushSubscriptions, expoPushSubscriptions, fcmPushSubscriptions, type Plant, type User, type InsertUser, type PushSubscription, type InsertPushSubscription, type ExpoPushSubscription, type FcmPushSubscription } from "@shared/schema";
+import { plants, users, apiUsage, pushSubscriptions, expoPushSubscriptions, fcmPushSubscriptions, type Plant, type User, type InsertUser, type PushSubscription, type InsertPushSubscription, type ExpoPushSubscription, type FcmPushSubscription } from "@shared/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { PlantCreate, PlantPatch } from "./plants/plantInput";
+import { DELETED_USAGE_USER, type ReserveResult, type UsageReservation, type UsageStore } from "./species/usage";
+
+export type CronPlant = Omit<Plant, 'photo_url' | 'notes' | 'created_at' | 'species_id' | 'species_name'>;
 
 const client = postgres(process.env.DATABASE_URL!);
 const db = drizzle(client);
 
-export interface IStorage {
+export interface IStorage extends UsageStore {
   // User methods
   createAnonymousUser(name?: string): Promise<User>;
   getUserById(id: number): Promise<User | null>;
@@ -31,7 +34,7 @@ export interface IStorage {
   // row). Used by the check-plants cron in routes.ts where the photo isn't
   // needed — pulling it every 5 minutes blew through Neon's 5 GB/mo
   // data-transfer quota in late April 2026.
-  getAllPlantsForCron(): Promise<Omit<Plant, 'photo_url' | 'notes' | 'created_at'>[]>;
+  getAllPlantsForCron(): Promise<CronPlant[]>;
   
   // Push subscription methods (web push)
   savePushSubscription(subscription: InsertPushSubscription): Promise<PushSubscription>;
@@ -178,7 +181,7 @@ export class DbStorage implements IStorage {
     return await db.select().from(plants);
   }
 
-  async getAllPlantsForCron(): Promise<Omit<Plant, 'photo_url' | 'notes' | 'created_at'>[]> {
+  async getAllPlantsForCron(): Promise<CronPlant[]> {
     // Explicit column list — never include photo_url here. The cron handler
     // doesn't need the photo, only dates and frequencies for due-date math
     // and the plant name for the notification body.
@@ -297,8 +300,40 @@ export class DbStorage implements IStorage {
     }));
   }
 
+  async reserve(input: UsageReservation): Promise<ReserveResult> {
+    return await db.transaction(async (tx) => {
+      // One lock per (day, kind) serializes concurrent reservations, so the
+      // global total cannot overshoot when several requests race at the cap.
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`api_usage:${input.day}:${input.kind}`}::text))`);
+      const [totals] = await tx
+        .select({
+          global: sql<number>`coalesce(sum(${apiUsage.count}), 0)::int`,
+          user: sql<number>`coalesce(sum(${apiUsage.count}) filter (where ${apiUsage.user_id} = ${input.userId}), 0)::int`,
+        })
+        .from(apiUsage)
+        .where(and(eq(apiUsage.day, input.day), eq(apiUsage.kind, input.kind)));
+      const globalCount = Number(totals?.global ?? 0);
+      const userCount = Number(totals?.user ?? 0);
+      if (userCount >= input.userLimit || globalCount >= input.globalLimit) return { ok: false };
+      await tx
+        .insert(apiUsage)
+        .values({ day: input.day, user_id: input.userId, kind: input.kind, count: 1 })
+        .onConflictDoUpdate({
+          target: [apiUsage.day, apiUsage.user_id, apiUsage.kind],
+          set: { count: sql`${apiUsage.count} + 1` },
+        });
+      return { ok: true, userCount: userCount + 1, globalCount: globalCount + 1 };
+    });
+  }
+
   async deleteAccountCascade(userId: number): Promise<string[]> {
     return await db.transaction(async (tx) => {
+      // Fold the user's provider usage into '__deleted__' so daily limits never drop (architecture §2.12).
+      await tx.execute(sql`
+        INSERT INTO api_usage (day, user_id, kind, count)
+        SELECT day, ${DELETED_USAGE_USER}::text, kind, count FROM api_usage WHERE user_id = ${String(userId)}::text
+        ON CONFLICT (day, user_id, kind) DO UPDATE SET count = api_usage.count + EXCLUDED.count`);
+      await tx.delete(apiUsage).where(eq(apiUsage.user_id, String(userId)));
       const deletedPlants = await tx
         .delete(plants)
         .where(eq(plants.user_id, String(userId)))

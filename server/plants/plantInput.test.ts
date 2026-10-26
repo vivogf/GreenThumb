@@ -125,3 +125,26 @@ test("POST requires name and last_watered_date, defaults photo_url and location"
   assert.equal(data.photo_url, "");
   assert.equal(data.location, "");
 });
+
+test("species fields are accepted as text or null only", () => {
+  assert.deepEqual(ok(parsePlantPatch({ species_id: "monstera-deliciosa", species_name: "Monstera deliciosa" }, null)), {
+    species_id: "monstera-deliciosa",
+    species_name: "Monstera deliciosa",
+  });
+  assert.deepEqual(ok(parsePlantPatch({ species_id: null, species_name: null }, null)), { species_id: null, species_name: null });
+  for (const v of [42, true, ["x"], { id: "x" }, ""]) {
+    bad(parsePlantPatch({ species_id: v }, null));
+    bad(parsePlantPatch({ species_name: v }, null));
+  }
+  bad(parsePlantPatch({ species_id: "x".repeat(101) }, null));
+  bad(parsePlantPatch({ species_name: "x".repeat(201) }, null));
+});
+
+test("POST accepts species fields and leaves them absent when omitted", () => {
+  const withSpecies = ok(parsePlantCreate({ ...validCreate, species_id: "monstera-deliciosa", species_name: "Monstera deliciosa" }, null));
+  assert.equal(withSpecies.species_id, "monstera-deliciosa");
+  assert.equal(withSpecies.species_name, "Monstera deliciosa");
+  const without = ok(parsePlantCreate(validCreate, null));
+  assert.equal("species_id" in without, false);
+  bad(parsePlantCreate({ ...validCreate, species_id: 7 }, null));
+});

@@ -7,6 +7,7 @@ import { createPushCheckGate } from "./push/checkGate";
 import { getPhotoRuntime } from "./photos/store";
 import { keyForPhotoUrl } from "./photos/keys";
 import { preparePhotoChange, removePhotoObjects } from "./photos/photoChange";
+import { createIdentifyHandler } from "./species/identifyRoute";
 import { addDaysToDateString, isWaterDue, localDateInTz } from "@shared/care/userDate";
 import webpush from "web-push";
 import { Expo } from "expo-server-sdk";
@@ -319,6 +320,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       plantRouteError(res, "Error deleting plant", error);
     }
   });
+
+  // Session is checked inside the handler, before any validation or provider call.
+  app.post("/api/species/identify", createIdentifyHandler({ store: storage }));
 
   // Mass actions use the caller's local calendar date (users.timezone, NULL → Moscow).
   async function setDuePlantsWatered(userId: number, dateFor: (today: string) => string): Promise<number> {

@@ -10,6 +10,7 @@ import { createHealthHandler, readRevision, DEFAULT_REVISION_FILE } from "./heal
 import { jsonBodyParser, jsonErrorHandler, urlencodedBodyParser } from "./http";
 import { createPhotoHandler, photoPathNotFound } from "./photos/route";
 import { getPhotoRuntime } from "./photos/store";
+import { createAssetLinksHandler } from "./assetlinks";
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -46,6 +47,8 @@ app.get("/api/health", createHealthHandler({
 // and every other /photos path is a 404 instead of the SPA fallback.
 app.get("/photos/:file", createPhotoHandler(() => getPhotoRuntime()?.store ?? null));
 app.all(["/photos", "/photos/*"], photoPathNotFound);
+
+app.get("/.well-known/assetlinks.json", createAssetLinksHandler());
 
 const PgStore = connectPgSimple(session);
 app.use(session({

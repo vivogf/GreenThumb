@@ -23,7 +23,8 @@ Moves `greenthumb.xmpp.site` from the old server `<OLD_VPS_IP>` (app on Neon) to
 - `.env` on the new VPS: `SESSION_SECRET PUSH_CHECK_API_KEY VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY
   VITE_VAPID_PUBLIC_KEY FIREBASE_SERVICE_ACCOUNT_JSON` equal to the old server (compared by sha256);
   `DATABASE_URL` points to the local Postgres.
-- No GreenThumb cron line on the new VPS yet. The old server still runs the hourly push cron.
+- The only GreenThumb cron line on the new VPS is the hourly backup (`17 * * * *`, R2 `greenthumb-backups`).
+  The old server still runs the hourly push cron.
 - Rehearsal: `scripts/ops/neon-sync.sh` dumped Neon to `/var/backups/greenthumb/neon-<ts>.dump` and restored it.
   Row counts were equal on both sides (users 66, plants 23, session 310, expo_push_subscriptions 7,
   push_subscriptions 3, fcm_push_subscriptions 0); photo_url profile: 15 `data:`, 2 `http(s)`, 6 empty.
@@ -55,7 +56,21 @@ bash scripts/deploy.sh --dry-run
    ssh <SSH_USER>@<VPS_IP> 'bash /var/www/greenthumb/scripts/ops/neon-sync.sh ~/.gt-neon-url --promote'
    ```
    The script stops and starts the app around the swap, compares per-table row counts and deletes the URL file.
-   Upload the produced dump to R2 as `pre-migration/neon-final-<UTC ts>.dump` (architecture §8.1).
+   Upload the produced dump to R2 as `pre-migration/neon-final-<UTC ts>.dump` (architecture §8.1):
+   ```bash
+   ssh <SSH_USER>@<VPS_IP> 'cd /var/www/greenthumb && D=$(ls -t /var/backups/greenthumb/neon-*.dump | head -1) && \
+     node --input-type=module -e "
+   import { createReadStream } from \"node:fs\";
+   import { Upload } from \"@aws-sdk/lib-storage\";
+   import { loadEnvFile } from \"./scripts/ops/lib/env.mjs\";
+   import { r2Client, backupsBucket } from \"./scripts/ops/lib/r2.mjs\";
+   loadEnvFile(); const c = r2Client();
+   const key = \"pre-migration/neon-final-\" + process.argv[1].match(/neon-(.+)\\.dump$/)[1] + \".dump\";
+   await new Upload({ client: c, queueSize: 1, partSize: 5 * 1024 * 1024,
+     params: { Bucket: backupsBucket(), Key: key, Body: createReadStream(process.argv[1]) } }).done();
+   console.log(\"uploaded\", key); c.destroy();" "$D"'
+   ```
+   Retention keeps the newest 10 objects under `pre-migration/`, so this dump rotates out after 10 later migrations.
    Record the counts and the photo_url profile in the handoff, and write the cutover timestamp above.
 6. **Fresh certificate on the new VPS** (DNS now points here, so HTTP-01 works through the
    `/.well-known/acme-challenge/` location):
@@ -66,7 +81,8 @@ bash scripts/deploy.sh --dry-run
    Then point `ssl_certificate`/`ssl_certificate_key` in the site to
    `/etc/letsencrypt/live/greenthumb.xmpp.site/{fullchain,privkey}.pem`, run `nginx -t`, reload, verify with
    `curl -vI https://greenthumb.xmpp.site` and `certbot renew --dry-run`. Remove `/etc/ssl/greenthumb/` afterwards.
-7. **Enable the cron on the new VPS** (push `0 * * * *`, log `/var/log/greenthumb-push.log`).
+7. **Enable the push cron on the new VPS** (push `0 * * * *`, log `/var/log/greenthumb-push.log`). The backup line
+   (`17 * * * *`, see `docs/ops/backup-restore.md`) is already installed.
 8. **Retire GreenThumb on the old server** (only these pieces; prosody, coturn, `xmpp.site`,
    `projects.xmpp.site` and their certs stay untouched). Back up each file before editing
    (`cp -a <file> <file>.bak.<UTC ts>`):

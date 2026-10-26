@@ -14,7 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { PlantPhoto } from '@/components/PlantPhoto';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { ArrowLeft, MapPin, Droplets, Calendar, Trash2, Sprout, Shovel, Scissors, Settings, X, Check, Pencil } from 'lucide-react';
-import { format, addDays, addMonths, formatDistanceToNow } from 'date-fns';
+import { ru as ruLocale } from 'date-fns/locale';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,13 +35,28 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { localDateString, parseCareDate } from '@shared/care/userDate';
+import { localDateString } from '@shared/care/userDate';
+import {
+  careDayLabel,
+  formatCareDate,
+  nextCareDateByDays,
+  nextCareDateByMonths,
+} from '@shared/care/dayLabel';
 
 export default function PlantDetails() {
   const { id } = useParams();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const dateLocale = i18n.language?.startsWith('ru') ? ruLocale : undefined;
+  const today = localDateString(new Date());
+  const formatDate = (date: string) => formatCareDate(date, dateLocale);
+  const relativeDay = (date: string) => {
+    const label = careDayLabel(date, today);
+    return 'count' in label
+      ? t(`plantDetails.${label.key}`, { count: label.count })
+      : t(`plantDetails.${label.key}`);
+  };
   const [isEditingSettings, setIsEditingSettings] = useState(false);
   const [editNotes, setEditNotes] = useState<string | null>(null);
   const [editName, setEditName] = useState<string | null>(null);
@@ -290,19 +305,18 @@ export default function PlantDetails() {
     );
   }
 
-  const nextWateringDate = addDays(parseCareDate(plant.last_watered_date), plant.water_frequency_days);
-  
-  // Calculate next care dates
+  const nextWateringDate = nextCareDateByDays(plant.last_watered_date, plant.water_frequency_days);
+
   const nextFertilizeDate = plant.fertilize_frequency_days && plant.last_fertilized_date
-    ? addDays(parseCareDate(plant.last_fertilized_date), plant.fertilize_frequency_days)
+    ? nextCareDateByDays(plant.last_fertilized_date, plant.fertilize_frequency_days)
     : null;
-  
+
   const nextRepotDate = plant.repot_frequency_months && plant.last_repotted_date
-    ? addMonths(parseCareDate(plant.last_repotted_date), plant.repot_frequency_months)
+    ? nextCareDateByMonths(plant.last_repotted_date, plant.repot_frequency_months)
     : null;
-  
+
   const nextPruneDate = plant.prune_frequency_months && plant.last_pruned_date
-    ? addMonths(parseCareDate(plant.last_pruned_date), plant.prune_frequency_months)
+    ? nextCareDateByMonths(plant.last_pruned_date, plant.prune_frequency_months)
     : null;
 
   return (
@@ -382,9 +396,9 @@ export default function PlantDetails() {
               <div className="flex-1">
                 <p className="text-sm font-medium">{t('plantDetails.lastWatered')}</p>
                 <p className="text-sm text-muted-foreground" data-testid="text-last-watered">
-                  {format(parseCareDate(plant.last_watered_date), 'PPP')}
+                  {formatDate(plant.last_watered_date)}
                   <span className="ml-2">
-                    ({formatDistanceToNow(parseCareDate(plant.last_watered_date), { addSuffix: true })})
+                    ({relativeDay(plant.last_watered_date)})
                   </span>
                 </p>
               </div>
@@ -395,9 +409,9 @@ export default function PlantDetails() {
               <div className="flex-1">
                 <p className="text-sm font-medium">{t('plantDetails.nextWatering')}</p>
                 <p className="text-sm text-muted-foreground" data-testid="text-next-watering">
-                  {format(nextWateringDate, 'PPP')}
+                  {formatDate(nextWateringDate)}
                   <span className="ml-2">
-                    ({formatDistanceToNow(nextWateringDate, { addSuffix: true })})
+                    ({relativeDay(nextWateringDate)})
                   </span>
                 </p>
               </div>
@@ -415,12 +429,12 @@ export default function PlantDetails() {
                   <div className="flex-1">
                     <p className="text-sm font-medium">{t('plantDetails.fertilizing')}</p>
                     <p className="text-sm text-muted-foreground">
-                      {t('plantDetails.last', { date: format(parseCareDate(plant.last_fertilized_date!), 'PPP') })}
+                      {t('plantDetails.last', { date: formatDate(plant.last_fertilized_date!) })}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {t('plantDetails.next', { date: format(nextFertilizeDate, 'PPP') })}
+                      {t('plantDetails.next', { date: formatDate(nextFertilizeDate) })}
                       <span className="ml-2">
-                        ({formatDistanceToNow(nextFertilizeDate, { addSuffix: true })})
+                        ({relativeDay(nextFertilizeDate)})
                       </span>
                     </p>
                   </div>
@@ -441,12 +455,12 @@ export default function PlantDetails() {
                   <div className="flex-1">
                     <p className="text-sm font-medium">{t('plantDetails.repotting')}</p>
                     <p className="text-sm text-muted-foreground">
-                      {t('plantDetails.last', { date: format(parseCareDate(plant.last_repotted_date!), 'PPP') })}
+                      {t('plantDetails.last', { date: formatDate(plant.last_repotted_date!) })}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {t('plantDetails.next', { date: format(nextRepotDate, 'PPP') })}
+                      {t('plantDetails.next', { date: formatDate(nextRepotDate) })}
                       <span className="ml-2">
-                        ({formatDistanceToNow(nextRepotDate, { addSuffix: true })})
+                        ({relativeDay(nextRepotDate)})
                       </span>
                     </p>
                   </div>
@@ -467,12 +481,12 @@ export default function PlantDetails() {
                   <div className="flex-1">
                     <p className="text-sm font-medium">{t('plantDetails.pruning')}</p>
                     <p className="text-sm text-muted-foreground">
-                      {t('plantDetails.last', { date: format(parseCareDate(plant.last_pruned_date!), 'PPP') })}
+                      {t('plantDetails.last', { date: formatDate(plant.last_pruned_date!) })}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {t('plantDetails.next', { date: format(nextPruneDate, 'PPP') })}
+                      {t('plantDetails.next', { date: formatDate(nextPruneDate) })}
                       <span className="ml-2">
-                        ({formatDistanceToNow(nextPruneDate, { addSuffix: true })})
+                        ({relativeDay(nextPruneDate)})
                       </span>
                     </p>
                   </div>

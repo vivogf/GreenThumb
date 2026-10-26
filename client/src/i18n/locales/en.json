@@ -158,6 +158,8 @@
     "today": "Today",
     "yesterday": "Yesterday",
     "daysAgo": "{{count}} days ago",
+    "tomorrow": "Tomorrow",
+    "inDays": "in {{count}} days",
     "plantDeleted": "Plant deleted",
     "plantDeletedDescription": "The plant has been removed from your collection.",
     "plantWatered": "Plant watered!",

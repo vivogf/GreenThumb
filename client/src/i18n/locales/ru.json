@@ -158,6 +158,8 @@
     "today": "Сегодня",
     "yesterday": "Вчера",
     "daysAgo": "{{count}} дн. назад",
+    "tomorrow": "Завтра",
+    "inDays": "через {{count}} дн.",
     "plantDeleted": "Растение удалено",
     "plantDeletedDescription": "Растение удалено из вашей коллекции.",
     "plantWatered": "Растение полито!",

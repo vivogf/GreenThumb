@@ -1,15 +1,13 @@
 import { type Server } from "node:http";
 
-import express, {
-  type Express,
-  type Request,
-  Response,
-  NextFunction,
-} from "express";
+import express, { type Express } from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 
 import { registerRoutes } from "./routes";
+import { storage } from "./storage";
+import { createHealthHandler, readRevision, DEFAULT_REVISION_FILE } from "./health";
+import { jsonBodyParser, jsonErrorHandler, urlencodedBodyParser } from "./http";
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -24,7 +22,7 @@ export function log(message: string, source = "express") {
 
 export const app = express();
 
-// Trust proxy for Replit's HTTPS termination
+// nginx terminates TLS in front of Express; secure cookies need the forwarded proto.
 app.set('trust proxy', 1);
 
 declare module 'express-session' {
@@ -33,19 +31,14 @@ declare module 'express-session' {
   }
 }
 
-declare module 'http' {
-  interface IncomingMessage {
-    rawBody: unknown
-  }
-}
+app.use(jsonBodyParser);
+app.use(urlencodedBodyParser);
 
-app.use(express.json({
-  limit: '50mb',
-  verify: (req, _res, buf) => {
-    req.rawBody = buf;
-  }
+// Registered before the session middleware so it answers even when the session store is down.
+app.get("/api/health", createHealthHandler({
+  pingDb: () => storage.ping(),
+  readRevision: () => readRevision(process.env.REVISION_FILE || DEFAULT_REVISION_FILE),
 }));
-app.use(express.urlencoded({ extended: false, limit: '50mb' }));
 
 const PgStore = connectPgSimple(session);
 app.use(session({
@@ -102,13 +95,7 @@ export default async function runApp(
 ) {
   const server = await registerRoutes(app);
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-
-    res.status(status).json({ message });
-    throw err;
-  });
+  app.use(jsonErrorHandler);
 
   // importantly run the final setup after setting up all the other routes so
   // the catch-all route doesn't interfere with the other routes
@@ -121,7 +108,7 @@ export default async function runApp(
   const port = parseInt(process.env.PORT || '5000', 10);
   server.listen({
     port,
-    host: "0.0.0.0",
+    host: process.env.HOST ?? "0.0.0.0",
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);

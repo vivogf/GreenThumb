@@ -52,6 +52,8 @@ export interface IStorage {
   // Plant photos live in plants.photo_url (data-URI), so there is no separate
   // file storage to clean up.
   deleteAccountCascade(userId: number): Promise<void>;
+
+  ping(): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -283,6 +285,10 @@ export class DbStorage implements IStorage {
       // this schema.
       await tx.delete(users).where(eq(users.id, userId));
     });
+  }
+
+  async ping(): Promise<void> {
+    await client`select 1`;
   }
 }
 

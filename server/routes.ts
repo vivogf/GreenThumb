@@ -15,6 +15,7 @@ import { createDiagnosisProvider } from "./diagnosis/provider";
 import { addDaysToDateString } from "@shared/care/userDate";
 import { plantsDueForWatering, userToday } from "./care/schedule";
 import { indexReminderData, reminderEligible, reminderFor } from "./push/reminders";
+import { notifTitle, plantCountText } from "./push/text";
 import { parseSeasonModeBody } from "./auth/seasonMode";
 import webpush from "web-push";
 import { Expo } from "expo-server-sdk";
@@ -590,26 +591,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Check plants and send notifications (protected with API key for cron jobs)
-    /**
-   * Format a notification body line for the count of plants needing care.
-   * Russian uses 3-form pluralization; English uses singular/plural.
-   */
-  function plantCountText(count: number, lang: 'ru' | 'en' = 'ru'): string {
-    if (lang === 'en') {
-      return `${count} ${count === 1 ? 'plant' : 'plants'} need your attention 🌿`;
-    }
-    const mod10 = count % 10;
-    const mod100 = count % 100;
-    let word: string;
-    if (mod10 === 1 && mod100 !== 11) word = 'растение';
-    else if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) word = 'растения';
-    else word = 'растений';
-    return `${count} ${word} ждут вашего внимания 🌿`;
-  }
-
-  function notifTitle(lang: 'ru' | 'en' = 'ru'): string {
-    return lang === 'en' ? 'Your plants need care 💚' : 'Ваши цветочки ждут заботы 💚';
-  }
   app.post("/api/push/check-plants", createPushCheckGate(), async (req: Request, res) => {
     try {
       // The slim variant (no photo_url): the cron needs only names and care dates.

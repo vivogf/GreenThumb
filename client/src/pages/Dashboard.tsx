@@ -4,7 +4,6 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { PlantCard, PlantCardSkeleton, type LayoutMode } from '@/components/PlantCard';
 import type { Plant } from '@shared/schema';
-import { addDays, startOfDay } from 'date-fns';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { Sprout, LayoutGrid, LayoutList, Search, Droplets, CalendarClock } from 'lucide-react';
@@ -12,7 +11,8 @@ import { motion, LayoutGroup } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { localDateString, parseCareDate } from '@shared/care/userDate';
+import { localDateString } from '@shared/care/userDate';
+import { useWaterSchedule } from '@/lib/waterSchedule';
 
 type SortOption = 'watering' | 'name' | 'location' | 'date';
 
@@ -20,6 +20,7 @@ export default function Dashboard() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { today, schedule } = useWaterSchedule();
   const [wateringPlantId, setWateringPlantId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('watering');
@@ -134,8 +135,9 @@ export default function Dashboard() {
     waterPlantMutation.mutate(plantId);
   };
 
-  const today = startOfDay(new Date());
-  
+  // Plants with an unreadable date sort last and count as not due, as on the server.
+  const nextDue = (plant: Plant) => schedule(plant)?.nextDue ?? '9999-12-31';
+
   // Filter by search query
   const filteredPlants = plants
     ? plants.filter((plant) =>
@@ -147,9 +149,9 @@ export default function Dashboard() {
   const sortedPlants = [...filteredPlants].sort((a, b) => {
     switch (sortBy) {
       case 'watering': {
-        const aNext = addDays(startOfDay(parseCareDate(a.last_watered_date)), a.water_frequency_days);
-        const bNext = addDays(startOfDay(parseCareDate(b.last_watered_date)), b.water_frequency_days);
-        return aNext.getTime() - bNext.getTime();
+        const aNext = nextDue(a);
+        const bNext = nextDue(b);
+        return aNext < bNext ? -1 : aNext > bNext ? 1 : 0;
       }
       case 'name':
         return a.name.localeCompare(b.name);
@@ -165,17 +167,9 @@ export default function Dashboard() {
     }
   });
 
-  const needsWater = sortedPlants.filter((plant) => {
-    const lastWatered = startOfDay(parseCareDate(plant.last_watered_date));
-    const nextWateringDate = addDays(lastWatered, plant.water_frequency_days);
-    return nextWateringDate <= today;
-  });
+  const needsWater = sortedPlants.filter((plant) => nextDue(plant) <= today);
 
-  const allGood = sortedPlants.filter((plant) => {
-    const lastWatered = startOfDay(parseCareDate(plant.last_watered_date));
-    const nextWateringDate = addDays(lastWatered, plant.water_frequency_days);
-    return nextWateringDate > today;
-  });
+  const allGood = sortedPlants.filter((plant) => nextDue(plant) > today);
 
   if (isLoading) {
     return (

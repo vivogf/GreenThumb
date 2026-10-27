@@ -4,11 +4,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Plant } from '@shared/schema';
-import { addDays, startOfDay } from 'date-fns';
 import { MapPin, Droplets, Heart, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useRef } from 'react';
-import { parseCareDate } from '@shared/care/userDate';
+import { calendarDaysFrom } from '@shared/care/dayLabel';
+import { useWaterSchedule } from '@/lib/waterSchedule';
 import { PlantPhoto } from '@/components/PlantPhoto';
 
 export type LayoutMode = 'card' | 'compact';
@@ -106,16 +106,20 @@ function WaterButton({ onWater, isWatering, needsWater, fullWidth, compact }: Wa
 
 export function PlantCard({ plant, onWater, isWatering, onClick, layout = 'card' }: PlantCardProps) {
   const { t } = useTranslation();
-  const lastWateredDate = startOfDay(parseCareDate(plant.last_watered_date));
-  const nextWateringDate = addDays(lastWateredDate, plant.water_frequency_days);
-  const today = startOfDay(new Date());
-  const isOverdue = nextWateringDate < today;
-  const isDueToday = nextWateringDate.getTime() === today.getTime();
+  const { today, schedule } = useWaterSchedule();
+  const nextWateringDate = schedule(plant)?.nextDue ?? null;
+  // Calendar days until the next watering (negative = overdue); null for an unreadable stored date.
+  const daysUntil = nextWateringDate ? calendarDaysFrom(today, nextWateringDate) : null;
+  const isOverdue = daysUntil !== null && daysUntil < 0;
+  const isDueToday = daysUntil === 0;
   const needsWater = isOverdue || isDueToday;
 
   const getWateringStatus = () => {
+    if (daysUntil === null) {
+      return { text: '—', shortText: '—', variant: 'secondary' as const };
+    }
     if (isOverdue) {
-      const daysOverdue = Math.floor((today.getTime() - nextWateringDate.getTime()) / (1000 * 60 * 60 * 24));
+      const daysOverdue = -daysUntil;
       return {
         text: t('plant.overdue', { count: daysOverdue }),
         shortText: `-${daysOverdue}`,
@@ -125,7 +129,6 @@ export function PlantCard({ plant, onWater, isWatering, onClick, layout = 'card'
     if (isDueToday) {
       return { text: t('plant.waterToday'), shortText: t('plantDetails.today'), variant: 'default' as const };
     }
-    const daysUntil = Math.ceil((nextWateringDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
     return {
       text: t('plant.daysLeft', { count: daysUntil }),
       shortText: `${daysUntil}`,

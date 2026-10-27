@@ -10,12 +10,14 @@ import { preparePhotoChange, removePhotoObjects } from "./photos/photoChange";
 import { createIdentifyHandler } from "./species/identifyRoute";
 import { createJournalHandlers } from "./journal/eventsRoute";
 import { createTimelineHandlers } from "./journal/photosRoute";
-import { addDaysToDateString, isWaterDue, localDateInTz } from "@shared/care/userDate";
+import { addDaysToDateString } from "@shared/care/userDate";
+import { plantsDueForWatering, userToday } from "./care/schedule";
+import { indexReminderData, reminderEligible, reminderFor } from "./push/reminders";
+import { parseSeasonModeBody } from "./auth/seasonMode";
 import webpush from "web-push";
 import { Expo } from "expo-server-sdk";
 import { getApps, initializeApp, cert, type App } from "firebase-admin/app";
 import { getMessaging, type Messaging } from "firebase-admin/messaging";
-import { addDays, isToday, isBefore, startOfDay } from "date-fns";
 
 const expo = new Expo();
 
@@ -212,6 +214,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/auth/update-season-mode", requireAuth, async (req: Request, res) => {
+    try {
+      const parsed = parseSeasonModeBody(req.body);
+      if (!parsed.ok) {
+        return res.status(400).json({ error: parsed.error });
+      }
+      const user = await storage.updateUserSeasonMode(req.session.userId!, parsed.mode);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      res.json({ user });
+    } catch (error) {
+      console.error("Error updating season mode:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Plant routes (protected). Per-plant routes answer the same 404 for a
   // foreign, missing or malformed id (architecture §1 invariant 2).
   const findOwnedPlant = (id: string, userId: number) => storage.getPlantForUser(id, userId);
@@ -327,14 +346,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/species/identify", createIdentifyHandler({ store: storage }));
 
   // Mass actions use the caller's local calendar date (users.timezone, NULL → Moscow).
+  // Due selection is the seasonal rule in server/care/schedule.ts.
   async function setDuePlantsWatered(userId: number, dateFor: (today: string) => string, journal: boolean): Promise<number> {
     const user = await storage.getUserById(userId);
-    const today = localDateInTz(new Date(), user?.timezone);
+    const now = new Date();
     const userPlants = await storage.getPlantsByUserId(String(userId));
-    const dueIds = userPlants
-      .filter((plant) => isWaterDue(plant.last_watered_date, plant.water_frequency_days, today))
-      .map((plant) => plant.id);
-    return storage.setLastWateredForUser(dueIds, userId, dateFor(today), journal);
+    const dueIds = plantsDueForWatering(userPlants, user, now).map((plant) => plant.id);
+    return storage.setLastWateredForUser(dueIds, userId, dateFor(userToday(user, now)), journal);
   }
 
   app.post("/api/plants/water-all", requireAuth, async (req: Request, res) => {
@@ -585,107 +603,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   function notifTitle(lang: 'ru' | 'en' = 'ru'): string {
     return lang === 'en' ? 'Your plants need care 💚' : 'Ваши цветочки ждут заботы 💚';
   }
-  /**
-   * Compute current local hour/minute in the given IANA timezone.
-   * Falls back to Moscow (UTC+3) on unknown tz so legacy users without a
-   * `timezone` row keep the previous behavior.
-   */
-  function localNowInTz(timezone: string | null | undefined): { hour: number; minute: number } {
-    const tz = timezone || 'Europe/Moscow';
-    const now = new Date();
-    try {
-      const parts = new Intl.DateTimeFormat('en-GB', {
-        timeZone: tz,
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit',
-      }).formatToParts(now);
-      return {
-        hour: parseInt(parts.find(p => p.type === 'hour')!.value, 10),
-        minute: parseInt(parts.find(p => p.type === 'minute')!.value, 10),
-      };
-    } catch {
-      // Bad timezone string — pretend MSK.
-      return {
-        hour: (now.getUTCHours() + 3) % 24,
-        minute: now.getUTCMinutes(),
-      };
-    }
-  }
-
-  /**
-   * Check if user's notification_time (HH:MM in their local tz) falls within
-   * the last `windowMinutes` before "now in their tz". Half-open window
-   * (windowStart, now] — see Apr 28 changelog for why both-side-inclusive
-   * caused the 09:00 + 09:05 duplicate-push bug.
-   *
-   * windowMinutes MUST equal the crontab interval. We run the check-plants
-   * cron HOURLY ("0 * * * *"), not every 5 min, to keep Neon Free's compute
-   * time under the 100 CU-hr/mo quota: a 5-minute cron never lets the compute
-   * autosuspend (~180 CU-hr/mo), an hourly tick keeps it near ~15 CU-hr/mo.
-   * With an hourly tick the 60-min half-open windows tile the day exactly, so
-   * every user is matched once — at the first top-of-hour >= their
-   * notification_time. Trade-off: reminders land on the hour (a 09:30 user is
-   * notified at 10:00). If you ever change the crontab interval, change this
-   * default to match it or users will be missed / double-notified.
-   */
-  function isInNotificationWindow(
-    userTime: string | null | undefined,
-    timezone: string | null | undefined,
-    windowMinutes = 60,
-  ): boolean {
-    if (!userTime) return false;
-    const match = userTime.match(/^(\d{1,2}):(\d{2})$/);
-    if (!match) return false;
-    const userMinutes = parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
-
-    const { hour, minute } = localNowInTz(timezone);
-    const localNowMinutes = (hour * 60 + minute) % 1440;
-    const windowStart = localNowMinutes - windowMinutes;
-
-    if (windowStart < 0) {
-      // Window crosses midnight (e.g. now=00:02, window=(23:57, 00:02])
-      return userMinutes > windowStart + 1440 || userMinutes <= localNowMinutes;
-    }
-    return userMinutes > windowStart && userMinutes <= localNowMinutes;
-  }
-
-  /**
-   * "Today" date string YYYY-MM-DD in the user's local timezone.
-   * Falls back to Moscow on unknown/missing tz. Used for per-user daily dedup.
-   */
-  function todayDateInTz(timezone: string | null | undefined): string {
-    const tz = timezone || 'Europe/Moscow';
-    try {
-      // 'en-CA' formats dates as YYYY-MM-DD by default, no manual parsing.
-      return new Intl.DateTimeFormat('en-CA', {
-        timeZone: tz,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      }).format(new Date());
-    } catch {
-      const now = new Date();
-      const mskMs = now.getTime() + 3 * 60 * 60 * 1000;
-      const msk = new Date(mskMs);
-      const y = msk.getUTCFullYear();
-      const m = String(msk.getUTCMonth() + 1).padStart(2, '0');
-      const d = String(msk.getUTCDate()).padStart(2, '0');
-      return `${y}-${m}-${d}`;
-    }
-  }
   app.post("/api/push/check-plants", createPushCheckGate(), async (req: Request, res) => {
     try {
-      // Use the slim variant (no photo_url) — the photo is base64 in the row
-      // and pulling it every 5 minutes is what blew Neon's monthly transfer
-      // quota in April 2026.
+      // The slim variant (no photo_url): the cron needs only names and care dates.
       const plants = await storage.getAllPlantsForCron();
       const subscriptions = await storage.getAllPushSubscriptions();
       const users = await storage.getAllUsers();
       const expoSubs = await storage.getAllExpoPushSubscriptions();
       const expoUserIds = new Set(expoSubs.map(s => s.user_id));
       const fcmSubs = await storage.getAllFcmPushSubscriptions();
-      const today = startOfDay(new Date());
+      const now = new Date();
+      // Due plants for every channel come from server/care/schedule.ts through reminderFor.
+      const reminderCtx = { ...indexReminderData(users, plants), now };
+      const userById = reminderCtx.users;
 
       const notificationsSent: string[] = [];
 
@@ -702,118 +632,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const fcmSendPromises: Promise<void>[] = [];
 
       for (const subscription of subscriptions) {
-        const user = users.find(u => u.id === subscription.user_id);
-        if (!isInNotificationWindow(user?.notification_time, user?.timezone)) continue;
         if (expoUserIds.has(subscription.user_id)) continue;
-        const userTodayStr = todayDateInTz(user?.timezone);
-        if (user?.last_notified_date === userTodayStr) continue;
-        const userPlants = plants.filter(p => p.user_id === String(subscription.user_id));
-        
-        const careNeeded: { water: string[]; fertilize: string[]; repot: string[]; prune: string[] } = {
-          water: [],
-          fertilize: [],
-          repot: [],
-          prune: [],
+        const reminder = reminderFor(subscription, reminderCtx);
+        if (!reminder) continue;
+
+        const pushSubscription = {
+          endpoint: subscription.endpoint,
+          keys: {
+            p256dh: subscription.p256dh,
+            auth: subscription.auth,
+          },
         };
-        
-        for (const plant of userPlants) {
-          // Check watering
-          const lastWatered = new Date(plant.last_watered_date);
-          const nextWaterDate = addDays(lastWatered, plant.water_frequency_days);
-          if (isToday(nextWaterDate) || isBefore(nextWaterDate, today)) {
-            careNeeded.water.push(plant.name);
-          }
-          
-          // Check fertilizing
-          if (plant.fertilize_frequency_days && plant.last_fertilized_date) {
-            const lastFertilized = new Date(plant.last_fertilized_date);
-            const nextFertilizeDate = addDays(lastFertilized, plant.fertilize_frequency_days);
-            if (isToday(nextFertilizeDate) || isBefore(nextFertilizeDate, today)) {
-              careNeeded.fertilize.push(plant.name);
-            }
-          }
-          
-          // Check repotting (uses months)
-          if (plant.repot_frequency_months && plant.last_repotted_date) {
-            const lastRepotted = new Date(plant.last_repotted_date);
-            const nextRepotDate = new Date(lastRepotted);
-            nextRepotDate.setMonth(nextRepotDate.getMonth() + plant.repot_frequency_months);
-            if (isToday(nextRepotDate) || isBefore(startOfDay(nextRepotDate), today)) {
-              careNeeded.repot.push(plant.name);
-            }
-          }
-          
-          // Check pruning (uses months)
-          if (plant.prune_frequency_months && plant.last_pruned_date) {
-            const lastPruned = new Date(plant.last_pruned_date);
-            const nextPruneDate = new Date(lastPruned);
-            nextPruneDate.setMonth(nextPruneDate.getMonth() + plant.prune_frequency_months);
-            if (isToday(nextPruneDate) || isBefore(startOfDay(nextPruneDate), today)) {
-              careNeeded.prune.push(plant.name);
-            }
-          }
-        }
-        
-        // Unique plant names that need any kind of care today.
-        const plantsNeedingCare = new Set<string>([
-          ...careNeeded.water,
-          ...careNeeded.fertilize,
-          ...careNeeded.repot,
-          ...careNeeded.prune,
-        ]);
+        const body = plantCountText(reminder.count, reminder.lang);
 
-        if (plantsNeedingCare.size > 0) {
-          const pushSubscription = {
-            endpoint: subscription.endpoint,
-            keys: {
-              p256dh: subscription.p256dh,
-              auth: subscription.auth,
-            },
-          };
-
-          // Localize title + body using the per-subscription language column.
-          // Existing rows default to 'ru' (see schema), so this is zero-regression.
-          const lang: 'ru' | 'en' = subscription.language === 'en' ? 'en' : 'ru';
-          const body = plantCountText(plantsNeedingCare.size, lang);
-
-          try {
-            await webpush.sendNotification(
-              pushSubscription,
-              JSON.stringify({
-                title: notifTitle(lang),
-                body,
-              }),
-              {
-                TTL: 86400,
-                urgency: 'high',
-                topic: 'plant-care',
-              }
-            );
-            notificationsSent.push(`User ${subscription.user_id}: ${body}`);
-            notifiedUserIds.add(subscription.user_id);
-          } catch (err: any) {
-            console.error(`Failed to send notification to user ${subscription.user_id}:`, err);
-            // Remove invalid subscriptions
-            if (err.statusCode === 410) {
-              await storage.deletePushSubscription(subscription.user_id);
+        try {
+          await webpush.sendNotification(
+            pushSubscription,
+            JSON.stringify({
+              title: notifTitle(reminder.lang),
+              body,
+            }),
+            {
+              TTL: 86400,
+              urgency: 'high',
+              topic: 'plant-care',
             }
+          );
+          notificationsSent.push(`User ${subscription.user_id}: ${body}`);
+          notifiedUserIds.add(subscription.user_id);
+        } catch (err: any) {
+          console.error(`Failed to send notification to user ${subscription.user_id}:`, err);
+          // Remove invalid subscriptions
+          if (err.statusCode === 410) {
+            await storage.deletePushSubscription(subscription.user_id);
           }
         }
       }
 
-      // Also send FCM push notifications to KMP app subscribers. The dedup
-      // and window logic mirror the Expo loop below; users with BOTH an FCM
-      // and an Expo subscription get at most one reminder (FCM wins, the
-      // Expo branch then skips them the same way the web branch does).
+      // Also send FCM push notifications to KMP app subscribers. Users with
+      // BOTH an FCM and an Expo subscription get at most one reminder (FCM
+      // wins, the Expo branch then skips them the same way the web branch does).
       const messaging = fcmMessaging();
       if (messaging) {
-        const fcmSubsThisTick = fcmSubs.filter(sub => {
-          const user = users.find(u => u.id === sub.user_id);
-          if (!isInNotificationWindow(user?.notification_time, user?.timezone)) return false;
-          const userTodayStr = todayDateInTz(user?.timezone);
-          if (user?.last_notified_date === userTodayStr) return false;
-          return true;
-        });
+        const fcmSubsThisTick = fcmSubs.filter(sub => reminderEligible(userById.get(sub.user_id), now));
 
         // FCM tokens can be revoked (app uninstalled, token rotation, Play
         // Services cache reset). Stale tokens are cleaned up when FCM
@@ -821,44 +682,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // / invalid-registration-token / invalid-argument).
         for (const sub of fcmSubsThisTick) {
           try {
-            const user = users.find(u => u.id === sub.user_id);
-            const userPlants = plants.filter(p => p.user_id === String(sub.user_id));
-            const careParts: string[] = [];
-
-            for (const plant of userPlants) {
-              const lastWatered = new Date(plant.last_watered_date);
-              const nextWaterDate = addDays(lastWatered, plant.water_frequency_days);
-              if (isToday(nextWaterDate) || isBefore(nextWaterDate, today)) {
-                careParts.push(`💧 ${plant.name}`);
-              }
-              if (plant.fertilize_frequency_days && plant.last_fertilized_date) {
-                const nextDate = addDays(new Date(plant.last_fertilized_date), plant.fertilize_frequency_days);
-                if (isToday(nextDate) || isBefore(nextDate, today)) careParts.push(`🌿 ${plant.name}`);
-              }
-              if (plant.repot_frequency_months && plant.last_repotted_date) {
-                const nextDate = new Date(plant.last_repotted_date);
-                nextDate.setMonth(nextDate.getMonth() + plant.repot_frequency_months);
-                if (isToday(nextDate) || isBefore(startOfDay(nextDate), today)) careParts.push(`🪴 ${plant.name}`);
-              }
-              if (plant.prune_frequency_months && plant.last_pruned_date) {
-                const nextDate = new Date(plant.last_pruned_date);
-                nextDate.setMonth(nextDate.getMonth() + plant.prune_frequency_months);
-                if (isToday(nextDate) || isBefore(startOfDay(nextDate), today)) careParts.push(`✂️ ${plant.name}`);
-              }
-            }
-
-            if (careParts.length === 0) continue;
-
-            const plantsNeedingCare = new Set(
-              careParts.map(p => p.replace(/^[^\s]+\s+/, ''))
-            );
-            const lang: 'ru' | 'en' = sub.language === 'en' ? 'en' : 'ru';
-            const body = plantCountText(plantsNeedingCare.size, lang);
+            const reminder = reminderFor(sub, reminderCtx);
+            if (!reminder) continue;
+            const body = plantCountText(reminder.count, reminder.lang);
 
             const fcmMessage = {
               token: sub.fcm_token,
               notification: {
-                title: notifTitle(lang),
+                title: notifTitle(reminder.lang),
                 body,
               },
               // Deep-link contract from the Expo app: tap → plant/{id}; the
@@ -914,51 +745,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       for (const sub of expoSubs) {
         if (!Expo.isExpoPushToken(sub.expo_push_token)) continue;
-
-        const user = users.find(u => u.id === sub.user_id);
-        if (!isInNotificationWindow(user?.notification_time, user?.timezone)) continue;
         if (fcmDoneUserIds.has(sub.user_id)) continue;
-        const userTodayStr = todayDateInTz(user?.timezone);
-        if (user?.last_notified_date === userTodayStr) continue;
-
-        const userPlants = plants.filter(p => p.user_id === String(sub.user_id));
-        const careParts: string[] = [];
-
-        for (const plant of userPlants) {
-          const lastWatered = new Date(plant.last_watered_date);
-          const nextWaterDate = addDays(lastWatered, plant.water_frequency_days);
-          if (isToday(nextWaterDate) || isBefore(nextWaterDate, today)) {
-            careParts.push(`💧 ${plant.name}`);
-          }
-          if (plant.fertilize_frequency_days && plant.last_fertilized_date) {
-            const nextDate = addDays(new Date(plant.last_fertilized_date), plant.fertilize_frequency_days);
-            if (isToday(nextDate) || isBefore(nextDate, today)) careParts.push(`🌿 ${plant.name}`);
-          }
-          if (plant.repot_frequency_months && plant.last_repotted_date) {
-            const nextDate = new Date(plant.last_repotted_date);
-            nextDate.setMonth(nextDate.getMonth() + plant.repot_frequency_months);
-            if (isToday(nextDate) || isBefore(startOfDay(nextDate), today)) careParts.push(`🪴 ${plant.name}`);
-          }
-          if (plant.prune_frequency_months && plant.last_pruned_date) {
-            const nextDate = new Date(plant.last_pruned_date);
-            nextDate.setMonth(nextDate.getMonth() + plant.prune_frequency_months);
-            if (isToday(nextDate) || isBefore(startOfDay(nextDate), today)) careParts.push(`✂️ ${plant.name}`);
-          }
-        }
-
-        if (careParts.length > 0) {
-          const plantsNeedingCare = new Set(
-            careParts.map(p => p.replace(/^[^\s]+\s+/, ''))
-          );
-          const lang: 'ru' | 'en' = sub.language === 'en' ? 'en' : 'ru';
-          expoMessages.push({
-            to: sub.expo_push_token,
-            sound: 'default',
-            title: notifTitle(lang),
-            body: plantCountText(plantsNeedingCare.size, lang),
-          });
-          expoMessageUserIds.push(sub.user_id);
-        }
+        const reminder = reminderFor(sub, reminderCtx);
+        if (!reminder) continue;
+        expoMessages.push({
+          to: sub.expo_push_token,
+          sound: 'default',
+          title: notifTitle(reminder.lang),
+          body: plantCountText(reminder.count, reminder.lang),
+        });
+        expoMessageUserIds.push(sub.user_id);
       }
 
       if (expoMessages.length > 0) {
@@ -996,8 +792,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Array.from avoids the TS2802 Set-iteration error under this tsconfig.
       for (const userId of Array.from(notifiedUserIds)) {
         try {
-          const user = users.find(u => u.id === userId);
-          await storage.markUserNotified(userId, todayDateInTz(user?.timezone));
+          await storage.markUserNotified(userId, userToday(userById.get(userId), now));
         } catch (err) {
           console.error(`Failed to mark user ${userId} as notified:`, err);
         }

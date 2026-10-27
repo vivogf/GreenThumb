@@ -17,6 +17,8 @@ export const users = pgTable("users", {
   // within a day so the hourly cron + a 60-minute notification window never
   // sends two pushes to the same user on the same date.
   last_notified_date: text("last_notified_date"),
+  // Seasonal watering (migration 006, check constraint there): auto | north | south | off.
+  season_mode: text("season_mode").$type<"auto" | "north" | "south" | "off">().notNull().default("auto"),
   recovery_key: uuid("recovery_key").defaultRandom().notNull().unique(),
   created_at: timestamp("created_at").defaultNow().notNull(),
 });

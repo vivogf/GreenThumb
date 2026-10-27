@@ -36,6 +36,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { localDateString } from '@shared/care/userDate';
+import { useWaterSchedule } from '@/lib/waterSchedule';
 import {
   careDayLabel,
   formatCareDate,
@@ -49,7 +50,7 @@ export default function PlantDetails() {
   const { toast } = useToast();
   const { t, i18n } = useTranslation();
   const dateLocale = i18n.language?.startsWith('ru') ? ruLocale : undefined;
-  const today = localDateString(new Date());
+  const { today, schedule } = useWaterSchedule();
   const formatDate = (date: string) => formatCareDate(date, dateLocale);
   const relativeDay = (date: string) => {
     const label = careDayLabel(date, today);
@@ -305,7 +306,8 @@ export default function PlantDetails() {
     );
   }
 
-  const nextWateringDate = nextCareDateByDays(plant.last_watered_date, plant.water_frequency_days);
+  const nextWateringDate =
+    schedule(plant)?.nextDue ?? nextCareDateByDays(plant.last_watered_date, plant.water_frequency_days);
 
   const nextFertilizeDate = plant.fertilize_frequency_days && plant.last_fertilized_date
     ? nextCareDateByDays(plant.last_fertilized_date, plant.fertilize_frequency_days)

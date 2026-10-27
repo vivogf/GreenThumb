@@ -4,6 +4,8 @@ interface AuthUser {
   id: number;
   name: string | null;
   notification_time?: string;
+  timezone?: string | null;
+  season_mode?: string;
   recovery_key: string;
   created_at: string;
 }

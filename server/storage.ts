@@ -3,6 +3,7 @@ import postgres from "postgres";
 import { plants, users, apiUsage, careEvents, plantPhotos, pushSubscriptions, expoPushSubscriptions, fcmPushSubscriptions, type Plant, type User, type InsertUser, type PushSubscription, type InsertPushSubscription, type ExpoPushSubscription, type FcmPushSubscription } from "@shared/schema";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { PlantCreate, PlantPatch } from "./plants/plantInput";
+import type { SeasonMode } from "@shared/season/rule";
 import { inferCareEvents, type CursorKey } from "./journal/careEvents";
 import type { CareEventRow, DeleteNoteResult, JournalStore } from "./journal/eventsRoute";
 import type { NewTimelinePhoto, TimelinePhotoRow, TimelineStore } from "./journal/photosRoute";
@@ -47,6 +48,7 @@ export interface IStorage extends UsageStore, JournalStore, TimelineStore {
   getAllUsers(): Promise<User[]>;
   updateUserNotificationTime(userId: number, notificationTime: string): Promise<User | null>;
   updateUserTimezone(userId: number, timezone: string): Promise<User | null>;
+  updateUserSeasonMode(userId: number, seasonMode: SeasonMode): Promise<User | null>;
   markUserNotified(userId: number, date: string): Promise<void>;
   regenerateRecoveryKey(userId: number): Promise<User | null>;
   
@@ -129,6 +131,15 @@ export class DbStorage implements IStorage {
     const [result] = await db
       .update(users)
       .set({ timezone })
+      .where(eq(users.id, userId))
+      .returning();
+    return result || null;
+  }
+
+  async updateUserSeasonMode(userId: number, seasonMode: SeasonMode): Promise<User | null> {
+    const [result] = await db
+      .update(users)
+      .set({ season_mode: seasonMode })
       .where(eq(users.id, userId))
       .returning();
     return result || null;

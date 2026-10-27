@@ -1,16 +1,30 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { plants, users, apiUsage, pushSubscriptions, expoPushSubscriptions, fcmPushSubscriptions, type Plant, type User, type InsertUser, type PushSubscription, type InsertPushSubscription, type ExpoPushSubscription, type FcmPushSubscription } from "@shared/schema";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { plants, users, apiUsage, careEvents, pushSubscriptions, expoPushSubscriptions, fcmPushSubscriptions, type Plant, type User, type InsertUser, type PushSubscription, type InsertPushSubscription, type ExpoPushSubscription, type FcmPushSubscription } from "@shared/schema";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { PlantCreate, PlantPatch } from "./plants/plantInput";
+import { inferCareEvents, type CursorKey } from "./journal/careEvents";
+import type { CareEventRow, DeleteNoteResult, JournalStore } from "./journal/eventsRoute";
 import { DELETED_USAGE_USER, type ReserveResult, type UsageReservation, type UsageStore } from "./species/usage";
 
 export type CronPlant = Omit<Plant, 'photo_url' | 'notes' | 'created_at' | 'species_id' | 'species_name'>;
 
+// created_at as text with microseconds: a JS Date would drop them and make cursors skip rows.
+const careEventColumns = {
+  id: careEvents.id,
+  plant_id: careEvents.plant_id,
+  user_id: careEvents.user_id,
+  type: careEvents.type,
+  occurred_on: careEvents.occurred_on,
+  note: careEvents.note,
+  photo_id: careEvents.photo_id,
+  created_at: sql<string>`to_char(${careEvents.created_at} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+};
+
 const client = postgres(process.env.DATABASE_URL!);
 const db = drizzle(client);
 
-export interface IStorage extends UsageStore {
+export interface IStorage extends UsageStore, JournalStore {
   // User methods
   createAnonymousUser(name?: string): Promise<User>;
   getUserById(id: number): Promise<User | null>;
@@ -25,10 +39,12 @@ export interface IStorage extends UsageStore {
   addPlant(plant: PlantCreate & { user_id: string }): Promise<Plant>;
   getPlantsByUserId(userId: string): Promise<Plant[]>;
   getPlantForUser(id: string, userId: number): Promise<Plant | null>;
+  /** Also journals every care date the patch moves forward (one event per field), in one transaction. */
   updatePlantForUser(id: string, userId: number, patch: PlantPatch): Promise<Plant | null>;
   /** Returns the deleted row's photo_url, or null when nothing was deleted. */
   deletePlantForUser(id: string, userId: number): Promise<{ photo_url: string } | null>;
-  setLastWateredForUser(ids: string[], userId: number, date: string): Promise<number>;
+  /** With journal=true a water event is recorded for each plant whose date moves forward. */
+  setLastWateredForUser(ids: string[], userId: number, date: string, journal: boolean): Promise<number>;
   getAllPlants(): Promise<Plant[]>;
   // Same as getAllPlants() but excludes photo_url (base64 blob, ~50-200 KB per
   // row). Used by the check-plants cron in routes.ts where the photo isn't
@@ -151,12 +167,34 @@ export class DbStorage implements IStorage {
   }
 
   async updatePlantForUser(id: string, userId: number, patch: PlantPatch): Promise<Plant | null> {
-    const [result] = await db
-      .update(plants)
-      .set(patch)
-      .where(and(eq(plants.id, id), eq(plants.user_id, String(userId))))
-      .returning();
-    return result || null;
+    // The row lock makes the old/new comparison and the journal insert one unit,
+    // so two concurrent identical PATCHes record a single care event.
+    return await db.transaction(async (tx) => {
+      const [old] = await tx
+        .select({
+          last_watered_date: plants.last_watered_date,
+          last_fertilized_date: plants.last_fertilized_date,
+          last_repotted_date: plants.last_repotted_date,
+          last_pruned_date: plants.last_pruned_date,
+        })
+        .from(plants)
+        .where(and(eq(plants.id, id), eq(plants.user_id, String(userId))))
+        .for("update");
+      if (!old) return null;
+      const [result] = await tx
+        .update(plants)
+        .set(patch)
+        .where(and(eq(plants.id, id), eq(plants.user_id, String(userId))))
+        .returning();
+      if (!result) return null;
+      const events = inferCareEvents(old, patch);
+      if (events.length > 0) {
+        await tx.insert(careEvents).values(
+          events.map((e) => ({ plant_id: id, user_id: String(userId), type: e.type, occurred_on: e.occurred_on })),
+        );
+      }
+      return result;
+    });
   }
 
   async deletePlantForUser(id: string, userId: number): Promise<{ photo_url: string } | null> {
@@ -167,14 +205,69 @@ export class DbStorage implements IStorage {
     return deleted ?? null;
   }
 
-  async setLastWateredForUser(ids: string[], userId: number, date: string): Promise<number> {
+  async setLastWateredForUser(ids: string[], userId: number, date: string, journal: boolean): Promise<number> {
     if (ids.length === 0) return 0;
-    const updated = await db
-      .update(plants)
-      .set({ last_watered_date: date })
-      .where(and(inArray(plants.id, ids), eq(plants.user_id, String(userId))))
-      .returning({ id: plants.id });
-    return updated.length;
+    return await db.transaction(async (tx) => {
+      const owned = and(inArray(plants.id, ids), eq(plants.user_id, String(userId)));
+      const before = await tx
+        .select({ id: plants.id, last_watered_date: plants.last_watered_date })
+        .from(plants)
+        .where(owned)
+        .for("update");
+      const updated = await tx
+        .update(plants)
+        .set({ last_watered_date: date })
+        .where(owned)
+        .returning({ id: plants.id });
+      if (journal) {
+        const rows = before.flatMap((p) =>
+          inferCareEvents(p, { last_watered_date: date }).map((e) => ({
+            plant_id: p.id,
+            user_id: String(userId),
+            type: e.type,
+            occurred_on: e.occurred_on,
+          })),
+        );
+        if (rows.length > 0) await tx.insert(careEvents).values(rows);
+      }
+      return updated.length;
+    });
+  }
+
+  // JournalStore: callers check plant ownership first; every query still carries the ids it relies on.
+  async listEvents(plantId: string, limit: number, before: CursorKey | null): Promise<CareEventRow[]> {
+    const after = before
+      ? sql`(${careEvents.occurred_on}, ${careEvents.created_at}, ${careEvents.id}) < (${before.occurred_on}::date, ${before.created_at}::timestamptz, ${before.id}::uuid)`
+      : undefined;
+    return await db
+      .select(careEventColumns)
+      .from(careEvents)
+      .where(and(eq(careEvents.plant_id, plantId), after))
+      .orderBy(desc(careEvents.occurred_on), desc(careEvents.created_at), desc(careEvents.id))
+      .limit(limit);
+  }
+
+  async insertNote(plantId: string, userId: number, note: string, occurredOn: string): Promise<CareEventRow> {
+    const [row] = await db
+      .insert(careEvents)
+      .values({ plant_id: plantId, user_id: String(userId), type: "note", note, occurred_on: occurredOn })
+      .returning(careEventColumns);
+    return row;
+  }
+
+  async deleteNoteEvent(plantId: string, userId: number, eventId: string): Promise<DeleteNoteResult> {
+    const match = and(
+      eq(careEvents.id, eventId),
+      eq(careEvents.plant_id, plantId),
+      eq(careEvents.user_id, String(userId)),
+    );
+    const [deleted] = await db
+      .delete(careEvents)
+      .where(and(match, eq(careEvents.type, "note")))
+      .returning({ id: careEvents.id });
+    if (deleted) return "deleted";
+    const [existing] = await db.select({ id: careEvents.id }).from(careEvents).where(match);
+    return existing ? "not_note" : "missing";
   }
 
   async getAllPlants(): Promise<Plant[]> {
@@ -334,6 +427,7 @@ export class DbStorage implements IStorage {
         SELECT day, ${DELETED_USAGE_USER}::text, kind, count FROM api_usage WHERE user_id = ${String(userId)}::text
         ON CONFLICT (day, user_id, kind) DO UPDATE SET count = api_usage.count + EXCLUDED.count`);
       await tx.delete(apiUsage).where(eq(apiUsage.user_id, String(userId)));
+      await tx.delete(careEvents).where(eq(careEvents.user_id, String(userId)));
       const deletedPlants = await tx
         .delete(plants)
         .where(eq(plants.user_id, String(userId)))

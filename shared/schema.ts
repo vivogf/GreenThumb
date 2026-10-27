@@ -126,6 +126,20 @@ export const apiUsage = pgTable("api_usage", {
 
 export type ApiUsage = typeof apiUsage.$inferSelect;
 
+// Care journal (migration 004). user_id is users.id as text, like plants.user_id.
+export const careEvents = pgTable("care_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  plant_id: uuid("plant_id").notNull().references(() => plants.id, { onDelete: "cascade" }),
+  user_id: text("user_id").notNull(),
+  type: text("type").$type<"water" | "fertilize" | "repot" | "prune" | "note" | "photo">().notNull(),
+  occurred_on: date("occurred_on", { mode: "string" }).notNull(),
+  note: text("note"),
+  photo_id: uuid("photo_id"),
+  created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type CareEvent = typeof careEvents.$inferSelect;
+
 // Written only by scripts/ops/migrate.mjs (one row per applied server/migrations/*.sql file).
 export const schemaMigrations = pgTable("schema_migrations", {
   name: text("name").primaryKey(),

@@ -8,6 +8,7 @@ import { getPhotoRuntime } from "./photos/store";
 import { keyForPhotoUrl } from "./photos/keys";
 import { preparePhotoChange, removePhotoObjects } from "./photos/photoChange";
 import { createIdentifyHandler } from "./species/identifyRoute";
+import { createJournalHandlers } from "./journal/eventsRoute";
 import { addDaysToDateString, isWaterDue, localDateInTz } from "@shared/care/userDate";
 import webpush from "web-push";
 import { Expo } from "expo-server-sdk";
@@ -325,19 +326,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/species/identify", createIdentifyHandler({ store: storage }));
 
   // Mass actions use the caller's local calendar date (users.timezone, NULL → Moscow).
-  async function setDuePlantsWatered(userId: number, dateFor: (today: string) => string): Promise<number> {
+  async function setDuePlantsWatered(userId: number, dateFor: (today: string) => string, journal: boolean): Promise<number> {
     const user = await storage.getUserById(userId);
     const today = localDateInTz(new Date(), user?.timezone);
     const userPlants = await storage.getPlantsByUserId(String(userId));
     const dueIds = userPlants
       .filter((plant) => isWaterDue(plant.last_watered_date, plant.water_frequency_days, today))
       .map((plant) => plant.id);
-    return storage.setLastWateredForUser(dueIds, userId, dateFor(today));
+    return storage.setLastWateredForUser(dueIds, userId, dateFor(today), journal);
   }
 
   app.post("/api/plants/water-all", requireAuth, async (req: Request, res) => {
     try {
-      const count = await setDuePlantsWatered(req.session.userId!, (today) => today);
+      const count = await setDuePlantsWatered(req.session.userId!, (today) => today, true);
       res.json({ success: true, count });
     } catch (error) {
       plantRouteError(res, "Error watering all plants", error);
@@ -346,13 +347,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/plants/postpone-all", requireAuth, async (req: Request, res) => {
     try {
-      // Postpone = pretend the plant was watered yesterday (user-local).
-      const count = await setDuePlantsWatered(req.session.userId!, (today) => addDaysToDateString(today, -1));
+      // Postpone = pretend the plant was watered yesterday (user-local). It is not care, so no journal event.
+      const count = await setDuePlantsWatered(req.session.userId!, (today) => addDaysToDateString(today, -1), false);
       res.json({ success: true, count });
     } catch (error) {
       plantRouteError(res, "Error postponing all plants", error);
     }
   });
+
+  // Care journal. Session and plant ownership are checked inside the handlers (404 for foreign plants).
+  const journal = createJournalHandlers({ store: storage, userTimezone });
+  app.get("/api/plants/:id/events", journal.list);
+  app.post("/api/plants/:id/events", journal.createNote);
+  app.delete("/api/plants/:id/events/:eventId", journal.remove);
+
   // Push notification routes
   app.post("/api/push/subscribe", requireAuth, async (req: Request, res) => {
     try {

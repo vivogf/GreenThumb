@@ -396,7 +396,8 @@ export class DbStorage implements IStorage {
       .where(eq(userAchievements.user_id, uid));
   }
 
-  async getAllPlants(): Promise<Plant[]> {    return await db.select().from(plants);
+  async getAllPlants(): Promise<Plant[]> {
+    return await db.select().from(plants);
   }
 
   async getAllPlantsForCron(): Promise<CronPlant[]> {

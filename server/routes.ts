@@ -9,6 +9,7 @@ import { keyForPhotoUrl } from "./photos/keys";
 import { preparePhotoChange, removePhotoObjects } from "./photos/photoChange";
 import { createIdentifyHandler } from "./species/identifyRoute";
 import { createJournalHandlers } from "./journal/eventsRoute";
+import { createTimelineHandlers } from "./journal/photosRoute";
 import { addDaysToDateString, isWaterDue, localDateInTz } from "@shared/care/userDate";
 import webpush from "web-push";
 import { Expo } from "expo-server-sdk";
@@ -315,7 +316,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json(PLANT_NOT_FOUND);
       }
       const photos = photoContext();
-      await removePhotoObjects(photos.store, [keyForPhotoUrl(deleted.photo_url, photos.publicBaseUrl)]);
+      await removePhotoObjects(photos.store, [keyForPhotoUrl(deleted.photo_url, photos.publicBaseUrl), ...deleted.object_keys]);
       res.json({ success: true });
     } catch (error) {
       plantRouteError(res, "Error deleting plant", error);
@@ -360,6 +361,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/plants/:id/events", journal.list);
   app.post("/api/plants/:id/events", journal.createNote);
   app.delete("/api/plants/:id/events/:eventId", journal.remove);
+
+  // Photo timeline. Same session/ownership rules as the journal; each photo carries one `photo` event.
+  const timeline = createTimelineHandlers({ store: storage, userTimezone, photos: photoContext });
+  app.get("/api/plants/:id/photos", timeline.list);
+  app.post("/api/plants/:id/photos", timeline.create);
+  app.delete("/api/plants/:id/photos/:photoId", timeline.remove);
 
   // Push notification routes
   app.post("/api/push/subscribe", requireAuth, async (req: Request, res) => {
@@ -496,9 +503,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/auth/account", requireAuth, async (req: Request, res) => {
     try {
       const userId = req.session.userId!;
-      const photoUrls = await storage.deleteAccountCascade(userId);
+      const deleted = await storage.deleteAccountCascade(userId);
       const photos = photoContext();
-      await removePhotoObjects(photos.store, photoUrls.map((url) => keyForPhotoUrl(url, photos.publicBaseUrl)));
+      await removePhotoObjects(photos.store, [
+        ...deleted.photo_urls.map((url) => keyForPhotoUrl(url, photos.publicBaseUrl)),
+        ...deleted.object_keys,
+      ]);
       req.session.destroy((err) => {
         if (err) {
           console.error("Account deletion: session destroy failed:", err);

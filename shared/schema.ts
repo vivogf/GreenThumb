@@ -134,11 +134,25 @@ export const careEvents = pgTable("care_events", {
   type: text("type").$type<"water" | "fertilize" | "repot" | "prune" | "note" | "photo">().notNull(),
   occurred_on: date("occurred_on", { mode: "string" }).notNull(),
   note: text("note"),
-  photo_id: uuid("photo_id"),
+  photo_id: uuid("photo_id").references(() => plantPhotos.id, { onDelete: "cascade" }),
   created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export type CareEvent = typeof careEvents.$inferSelect;
+
+// Photo timeline (migration 005). object_key is the R2 key `p/<uuid>.<ext>`; url is its public /photos/ URL.
+export const plantPhotos = pgTable("plant_photos", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  plant_id: uuid("plant_id").notNull().references(() => plants.id, { onDelete: "cascade" }),
+  user_id: text("user_id").notNull(),
+  object_key: text("object_key").notNull().unique(),
+  url: text("url").notNull(),
+  taken_on: date("taken_on", { mode: "string" }).notNull(),
+  caption: text("caption"),
+  created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type PlantPhoto = typeof plantPhotos.$inferSelect;
 
 // Written only by scripts/ops/migrate.mjs (one row per applied server/migrations/*.sql file).
 export const schemaMigrations = pgTable("schema_migrations", {

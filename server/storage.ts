@@ -1,10 +1,11 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { plants, users, apiUsage, careEvents, pushSubscriptions, expoPushSubscriptions, fcmPushSubscriptions, type Plant, type User, type InsertUser, type PushSubscription, type InsertPushSubscription, type ExpoPushSubscription, type FcmPushSubscription } from "@shared/schema";
+import { plants, users, apiUsage, careEvents, plantPhotos, pushSubscriptions, expoPushSubscriptions, fcmPushSubscriptions, type Plant, type User, type InsertUser, type PushSubscription, type InsertPushSubscription, type ExpoPushSubscription, type FcmPushSubscription } from "@shared/schema";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { PlantCreate, PlantPatch } from "./plants/plantInput";
 import { inferCareEvents, type CursorKey } from "./journal/careEvents";
 import type { CareEventRow, DeleteNoteResult, JournalStore } from "./journal/eventsRoute";
+import type { NewTimelinePhoto, TimelinePhotoRow, TimelineStore } from "./journal/photosRoute";
 import { DELETED_USAGE_USER, type ReserveResult, type UsageReservation, type UsageStore } from "./species/usage";
 
 export type CronPlant = Omit<Plant, 'photo_url' | 'notes' | 'created_at' | 'species_id' | 'species_name'>;
@@ -21,10 +22,24 @@ const careEventColumns = {
   created_at: sql<string>`to_char(${careEvents.created_at} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
 };
 
+const plantPhotoColumns = {
+  id: plantPhotos.id,
+  url: plantPhotos.url,
+  taken_on: plantPhotos.taken_on,
+  caption: plantPhotos.caption,
+  created_at: sql<string>`to_char(${plantPhotos.created_at} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+};
+
+/** What a plant deletion leaves to clean up in photo storage. */
+export type DeletedPlant = { photo_url: string; object_keys: string[] };
+
+/** What an account deletion leaves to clean up in photo storage. */
+export type DeletedAccountPhotos = { photo_urls: string[]; object_keys: string[] };
+
 const client = postgres(process.env.DATABASE_URL!);
 const db = drizzle(client);
 
-export interface IStorage extends UsageStore, JournalStore {
+export interface IStorage extends UsageStore, JournalStore, TimelineStore {
   // User methods
   createAnonymousUser(name?: string): Promise<User>;
   getUserById(id: number): Promise<User | null>;
@@ -41,8 +56,8 @@ export interface IStorage extends UsageStore, JournalStore {
   getPlantForUser(id: string, userId: number): Promise<Plant | null>;
   /** Also journals every care date the patch moves forward (one event per field), in one transaction. */
   updatePlantForUser(id: string, userId: number, patch: PlantPatch): Promise<Plant | null>;
-  /** Returns the deleted row's photo_url, or null when nothing was deleted. */
-  deletePlantForUser(id: string, userId: number): Promise<{ photo_url: string } | null>;
+  /** Also deletes the plant's timeline rows; returns the cover URL and timeline object keys, or null when nothing was deleted. */
+  deletePlantForUser(id: string, userId: number): Promise<DeletedPlant | null>;
   /** With journal=true a water event is recorded for each plant whose date moves forward. */
   setLastWateredForUser(ids: string[], userId: number, date: string, journal: boolean): Promise<number>;
   getAllPlants(): Promise<Plant[]>;
@@ -72,9 +87,9 @@ export interface IStorage extends UsageStore, JournalStore {
 
   // Account deletion (KMP app, Google Play requirement): removes every row
   // that belongs to the user in one transaction, then the user row itself.
-  // Returns the photo_url values of the deleted plants so the caller can
-  // remove their objects from photo storage after the commit.
-  deleteAccountCascade(userId: number): Promise<string[]>;
+  // Returns the cover photo_url values of the deleted plants and the timeline
+  // object keys so the caller can remove those objects after the commit.
+  deleteAccountCascade(userId: number): Promise<DeletedAccountPhotos>;
 
   ping(): Promise<void>;
 }
@@ -197,12 +212,20 @@ export class DbStorage implements IStorage {
     });
   }
 
-  async deletePlantForUser(id: string, userId: number): Promise<{ photo_url: string } | null> {
-    const [deleted] = await db
-      .delete(plants)
-      .where(and(eq(plants.id, id), eq(plants.user_id, String(userId))))
-      .returning({ photo_url: plants.photo_url });
-    return deleted ?? null;
+  async deletePlantForUser(id: string, userId: number): Promise<DeletedPlant | null> {
+    return await db.transaction(async (tx) => {
+      // Timeline rows would also go by FK cascade; deleting them here returns their object keys.
+      const photos = await tx
+        .delete(plantPhotos)
+        .where(and(eq(plantPhotos.plant_id, id), eq(plantPhotos.user_id, String(userId))))
+        .returning({ object_key: plantPhotos.object_key });
+      const [deleted] = await tx
+        .delete(plants)
+        .where(and(eq(plants.id, id), eq(plants.user_id, String(userId))))
+        .returning({ photo_url: plants.photo_url });
+      if (!deleted) return null;
+      return { photo_url: deleted.photo_url, object_keys: photos.map((p) => p.object_key) };
+    });
   }
 
   async setLastWateredForUser(ids: string[], userId: number, date: string, journal: boolean): Promise<number> {
@@ -268,6 +291,46 @@ export class DbStorage implements IStorage {
     if (deleted) return "deleted";
     const [existing] = await db.select({ id: careEvents.id }).from(careEvents).where(match);
     return existing ? "not_note" : "missing";
+  }
+
+  // TimelineStore: callers check plant ownership first; every query still carries the ids it relies on.
+  async listPhotos(plantId: string): Promise<TimelinePhotoRow[]> {
+    return await db
+      .select(plantPhotoColumns)
+      .from(plantPhotos)
+      .where(eq(plantPhotos.plant_id, plantId))
+      .orderBy(desc(plantPhotos.taken_on), desc(plantPhotos.created_at), desc(plantPhotos.id));
+  }
+
+  async insertPhotoWithEvent(
+    plantId: string,
+    userId: number,
+    photo: NewTimelinePhoto,
+  ): Promise<{ photo: TimelinePhotoRow; event: CareEventRow }> {
+    return await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(plantPhotos)
+        .values({ plant_id: plantId, user_id: String(userId), ...photo })
+        .returning({ ...plantPhotoColumns });
+      const [event] = await tx
+        .insert(careEvents)
+        .values({ plant_id: plantId, user_id: String(userId), type: "photo", occurred_on: photo.taken_on, photo_id: row.id })
+        .returning(careEventColumns);
+      return { photo: row, event };
+    });
+  }
+
+  async deletePhotoForUser(plantId: string, userId: number, photoId: string): Promise<{ object_key: string } | null> {
+    return await db.transaction(async (tx) => {
+      await tx
+        .delete(careEvents)
+        .where(and(eq(careEvents.photo_id, photoId), eq(careEvents.plant_id, plantId), eq(careEvents.user_id, String(userId))));
+      const [deleted] = await tx
+        .delete(plantPhotos)
+        .where(and(eq(plantPhotos.id, photoId), eq(plantPhotos.plant_id, plantId), eq(plantPhotos.user_id, String(userId))))
+        .returning({ object_key: plantPhotos.object_key });
+      return deleted ?? null;
+    });
   }
 
   async getAllPlants(): Promise<Plant[]> {
@@ -419,7 +482,7 @@ export class DbStorage implements IStorage {
     });
   }
 
-  async deleteAccountCascade(userId: number): Promise<string[]> {
+  async deleteAccountCascade(userId: number): Promise<DeletedAccountPhotos> {
     return await db.transaction(async (tx) => {
       // Fold the user's provider usage into '__deleted__' so daily limits never drop (architecture §2.12).
       await tx.execute(sql`
@@ -428,6 +491,10 @@ export class DbStorage implements IStorage {
         ON CONFLICT (day, user_id, kind) DO UPDATE SET count = api_usage.count + EXCLUDED.count`);
       await tx.delete(apiUsage).where(eq(apiUsage.user_id, String(userId)));
       await tx.delete(careEvents).where(eq(careEvents.user_id, String(userId)));
+      const timeline = await tx
+        .delete(plantPhotos)
+        .where(eq(plantPhotos.user_id, String(userId)))
+        .returning({ object_key: plantPhotos.object_key });
       const deletedPlants = await tx
         .delete(plants)
         .where(eq(plants.user_id, String(userId)))
@@ -440,7 +507,7 @@ export class DbStorage implements IStorage {
       // SQL. Every session of the user goes, not only the caller's cookie.
       await tx.execute(sql`DELETE FROM "session" WHERE sess->>'userId' = ${String(userId)}`);
       await tx.delete(users).where(eq(users.id, userId));
-      return deletedPlants.map((p) => p.photo_url);
+      return { photo_urls: deletedPlants.map((p) => p.photo_url), object_keys: timeline.map((p) => p.object_key) };
     });
   }
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Daily orphan sweep of R2 photo objects (cron 40 3 * * *).
 //   node scripts/ops/sweep-photos.mjs [--dry-run] [--min-age-hours N]   (default 24)
-// Deletes `p/<uuid>.<ext>` objects older than N hours that no DB row references (plants.photo_url, and
-// plant_photos once that table exists). Logs counts and keys only.
+// Deletes `p/<uuid>.<ext>` objects older than N hours that no DB row references (plants.photo_url,
+// plant_photos.object_key and plant_photos.url). Logs counts and keys only.
 import postgres from 'postgres';
 import { loadEnvFile, log, requireEnv } from './lib/env.mjs';
 import { deleteKeys, listObjects, r2Client } from './lib/r2.mjs';

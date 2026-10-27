@@ -156,6 +156,15 @@ export const plantPhotos = pgTable("plant_photos", {
 
 export type PlantPhoto = typeof plantPhotos.$inferSelect;
 
+// Achievements (migration 007). user_id is users.id as text; one row per unlocked achievement, never re-locked.
+export const userAchievements = pgTable("user_achievements", {
+  user_id: text("user_id").notNull(),
+  achievement_id: text("achievement_id").notNull(),
+  unlocked_at: timestamp("unlocked_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [primaryKey({ columns: [t.user_id, t.achievement_id] })]);
+
+export type UserAchievement = typeof userAchievements.$inferSelect;
+
 // Written only by scripts/ops/migrate.mjs (one row per applied server/migrations/*.sql file).
 export const schemaMigrations = pgTable("schema_migrations", {
   name: text("name").primaryKey(),

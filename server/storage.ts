@@ -1,12 +1,14 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { plants, users, apiUsage, careEvents, plantPhotos, pushSubscriptions, expoPushSubscriptions, fcmPushSubscriptions, type Plant, type User, type InsertUser, type PushSubscription, type InsertPushSubscription, type ExpoPushSubscription, type FcmPushSubscription } from "@shared/schema";
+import { plants, users, apiUsage, careEvents, plantPhotos, userAchievements, pushSubscriptions, expoPushSubscriptions, fcmPushSubscriptions, type Plant, type User, type InsertUser, type PushSubscription, type InsertPushSubscription, type ExpoPushSubscription, type FcmPushSubscription } from "@shared/schema";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { PlantCreate, PlantPatch } from "./plants/plantInput";
 import type { SeasonMode } from "@shared/season/rule";
 import { inferCareEvents, type CursorKey } from "./journal/careEvents";
 import type { CareEventRow, DeleteNoteResult, JournalStore } from "./journal/eventsRoute";
 import type { NewTimelinePhoto, TimelinePhotoRow, TimelineStore } from "./journal/photosRoute";
+import type { ProgressData, ProgressStore } from "./progress/route";
+import type { AchievementId, StoredAchievement } from "./progress/achievements";
 import { DELETED_USAGE_USER, type ApiUsageKind, type ReserveResult, type UsageCounter, type UsageReservation, type UsageStore } from "./species/usage";
 
 export type CronPlant = Omit<Plant, 'photo_url' | 'notes' | 'created_at' | 'species_id' | 'species_name'>;
@@ -40,7 +42,7 @@ export type DeletedAccountPhotos = { photo_urls: string[]; object_keys: string[]
 const client = postgres(process.env.DATABASE_URL!);
 const db = drizzle(client);
 
-export interface IStorage extends UsageStore, UsageCounter, JournalStore, TimelineStore {
+export interface IStorage extends UsageStore, UsageCounter, JournalStore, TimelineStore, ProgressStore {
   // User methods
   createAnonymousUser(name?: string): Promise<User>;
   getUserById(id: number): Promise<User | null>;
@@ -344,8 +346,57 @@ export class DbStorage implements IStorage {
     });
   }
 
-  async getAllPlants(): Promise<Plant[]> {
-    return await db.select().from(plants);
+  // ProgressStore. plants.created_at is a timestamp without zone written in the server's UTC session.
+  async getProgressData(userId: number): Promise<ProgressData | null> {
+    const uid = String(userId);
+    const [userRows, plantRows, eventRows, photoRows, achievementRows] = await Promise.all([
+      db.select({ timezone: users.timezone, season_mode: users.season_mode }).from(users).where(eq(users.id, userId)),
+      db
+        .select({
+          id: plants.id,
+          created_at: sql<string>`to_char(${plants.created_at}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+          water_frequency_days: plants.water_frequency_days,
+          last_watered_date: plants.last_watered_date,
+          has_cover_photo: sql<boolean>`coalesce(${plants.photo_url}, '') <> ''`,
+        })
+        .from(plants)
+        .where(eq(plants.user_id, uid)),
+      db
+        .select({ plant_id: careEvents.plant_id, type: careEvents.type, occurred_on: careEvents.occurred_on })
+        .from(careEvents)
+        .where(eq(careEvents.user_id, uid)),
+      db.select({ count: sql<number>`count(*)::int` }).from(plantPhotos).where(eq(plantPhotos.user_id, uid)),
+      db
+        .select({ achievement_id: userAchievements.achievement_id, unlocked_at: userAchievements.unlocked_at })
+        .from(userAchievements)
+        .where(eq(userAchievements.user_id, uid)),
+    ]);
+    const [user] = userRows;
+    if (!user) return null;
+    return {
+      user,
+      plants: plantRows,
+      events: eventRows,
+      timelinePhotoCount: Number(photoRows[0]?.count ?? 0),
+      achievements: achievementRows,
+    };
+  }
+
+  async unlockAchievements(userId: number, ids: AchievementId[], at: Date): Promise<StoredAchievement[]> {
+    const uid = String(userId);
+    if (ids.length > 0) {
+      await db
+        .insert(userAchievements)
+        .values(ids.map((id) => ({ user_id: uid, achievement_id: id, unlocked_at: at })))
+        .onConflictDoNothing({ target: [userAchievements.user_id, userAchievements.achievement_id] });
+    }
+    return await db
+      .select({ achievement_id: userAchievements.achievement_id, unlocked_at: userAchievements.unlocked_at })
+      .from(userAchievements)
+      .where(eq(userAchievements.user_id, uid));
+  }
+
+  async getAllPlants(): Promise<Plant[]> {    return await db.select().from(plants);
   }
 
   async getAllPlantsForCron(): Promise<CronPlant[]> {
@@ -520,6 +571,7 @@ export class DbStorage implements IStorage {
         ON CONFLICT (day, user_id, kind) DO UPDATE SET count = api_usage.count + EXCLUDED.count`);
       await tx.delete(apiUsage).where(eq(apiUsage.user_id, String(userId)));
       await tx.delete(careEvents).where(eq(careEvents.user_id, String(userId)));
+      await tx.delete(userAchievements).where(eq(userAchievements.user_id, String(userId)));
       const timeline = await tx
         .delete(plantPhotos)
         .where(eq(plantPhotos.user_id, String(userId)))

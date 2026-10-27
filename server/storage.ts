@@ -7,7 +7,7 @@ import type { SeasonMode } from "@shared/season/rule";
 import { inferCareEvents, type CursorKey } from "./journal/careEvents";
 import type { CareEventRow, DeleteNoteResult, JournalStore } from "./journal/eventsRoute";
 import type { NewTimelinePhoto, TimelinePhotoRow, TimelineStore } from "./journal/photosRoute";
-import { DELETED_USAGE_USER, type ReserveResult, type UsageReservation, type UsageStore } from "./species/usage";
+import { DELETED_USAGE_USER, type ApiUsageKind, type ReserveResult, type UsageCounter, type UsageReservation, type UsageStore } from "./species/usage";
 
 export type CronPlant = Omit<Plant, 'photo_url' | 'notes' | 'created_at' | 'species_id' | 'species_name'>;
 
@@ -40,7 +40,7 @@ export type DeletedAccountPhotos = { photo_urls: string[]; object_keys: string[]
 const client = postgres(process.env.DATABASE_URL!);
 const db = drizzle(client);
 
-export interface IStorage extends UsageStore, JournalStore, TimelineStore {
+export interface IStorage extends UsageStore, UsageCounter, JournalStore, TimelineStore {
   // User methods
   createAnonymousUser(name?: string): Promise<User>;
   getUserById(id: number): Promise<User | null>;
@@ -491,6 +491,24 @@ export class DbStorage implements IStorage {
         });
       return { ok: true, userCount: userCount + 1, globalCount: globalCount + 1 };
     });
+  }
+
+  async usageCount(day: string, userId: string, kind: ApiUsageKind): Promise<number> {
+    const [row] = await db
+      .select({ count: apiUsage.count })
+      .from(apiUsage)
+      .where(and(eq(apiUsage.day, day), eq(apiUsage.user_id, userId), eq(apiUsage.kind, kind)));
+    return Number(row?.count ?? 0);
+  }
+
+  async recordUsage(day: string, userId: string, kind: ApiUsageKind): Promise<void> {
+    await db
+      .insert(apiUsage)
+      .values({ day, user_id: userId, kind, count: 1 })
+      .onConflictDoUpdate({
+        target: [apiUsage.day, apiUsage.user_id, apiUsage.kind],
+        set: { count: sql`${apiUsage.count} + 1` },
+      });
   }
 
   async deleteAccountCascade(userId: number): Promise<DeletedAccountPhotos> {

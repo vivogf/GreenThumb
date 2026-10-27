@@ -25,6 +25,15 @@ export interface UsageStore {
   reserve(input: UsageReservation): Promise<ReserveResult>;
 }
 
+/**
+ * Count-after-success counters (diagnosis: only successful results count, architecture §8.7). The limit check
+ * reads the count before the provider call; the increment happens after a validated result.
+ */
+export interface UsageCounter {
+  usageCount(day: string, userId: string, kind: ApiUsageKind): Promise<number>;
+  recordUsage(day: string, userId: string, kind: ApiUsageKind): Promise<void>;
+}
+
 function positiveInt(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw.trim() === "") return fallback;
   const n = Number(raw);
@@ -48,7 +57,7 @@ export function remainingAfter(result: { userCount: number; globalCount: number 
 }
 
 /** In-memory UsageStore with the same semantics as the database one. */
-export class MemoryUsageStore implements UsageStore {
+export class MemoryUsageStore implements UsageStore, UsageCounter {
   readonly rows = new Map<string, number>();
 
   private key(day: string, userId: string, kind: string) {
@@ -74,6 +83,14 @@ export class MemoryUsageStore implements UsageStore {
     if (userCount >= input.userLimit || globalCount >= input.globalLimit) return { ok: false };
     this.rows.set(this.key(input.day, input.userId, input.kind), userCount + 1);
     return { ok: true, userCount: userCount + 1, globalCount: globalCount + 1 };
+  }
+
+  async usageCount(day: string, userId: string, kind: ApiUsageKind): Promise<number> {
+    return this.count(day, userId, kind);
+  }
+
+  async recordUsage(day: string, userId: string, kind: ApiUsageKind): Promise<void> {
+    this.rows.set(this.key(day, userId, kind), this.count(day, userId, kind) + 1);
   }
 
   /** Mirrors account deletion: the user's rows fold into `__deleted__`. */

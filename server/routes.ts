@@ -10,6 +10,8 @@ import { preparePhotoChange, removePhotoObjects } from "./photos/photoChange";
 import { createIdentifyHandler } from "./species/identifyRoute";
 import { createJournalHandlers } from "./journal/eventsRoute";
 import { createTimelineHandlers } from "./journal/photosRoute";
+import { createDiagnoseHandler } from "./diagnosis/route";
+import { createDiagnosisProvider } from "./diagnosis/provider";
 import { addDaysToDateString } from "@shared/care/userDate";
 import { plantsDueForWatering, userToday } from "./care/schedule";
 import { indexReminderData, reminderEligible, reminderFor } from "./push/reminders";
@@ -385,6 +387,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/plants/:id/photos", timeline.list);
   app.post("/api/plants/:id/photos", timeline.create);
   app.delete("/api/plants/:id/photos/:photoId", timeline.remove);
+
+  // AI diagnosis. Session, ownership, input, provider and daily limit are checked inside the handler, in that order.
+  const diagnosisProvider = createDiagnosisProvider(process.env);
+  console.log(diagnosisProvider ? `AI diagnosis: ${diagnosisProvider.name} (${diagnosisProvider.model})` : "AI diagnosis: disabled");
+  app.post("/api/plants/:id/diagnose", createDiagnoseHandler({ store: storage, provider: () => diagnosisProvider }));
 
   // Push notification routes
   app.post("/api/push/subscribe", requireAuth, async (req: Request, res) => {

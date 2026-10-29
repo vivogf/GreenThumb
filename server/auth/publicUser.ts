@@ -2,9 +2,9 @@ import { users, type User } from "@shared/schema";
 
 /**
  * The users columns that may leave the database layer. An allow-list on purpose:
- * a column added later stays private until someone adds it here. Neither
- * recovery_key nor recovery_key_hash is in it; create and regenerate add the new
- * plaintext key to their own response.
+ * a column added later stays private until someone adds it here. Neither key
+ * hash is in it; create and regenerate add the new plaintext key to their own
+ * response.
  */
 export const PUBLIC_USER_FIELDS = [
   "id",

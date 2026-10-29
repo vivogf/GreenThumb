@@ -66,6 +66,17 @@ test('every nginx server block turns off the access log and sends the error log 
   assert.ok(errors.every((d) => /error_log\s+\/dev\/null\s*;/.test(d)), 'no location may write an error log');
 });
 
+test('the 443 block sends HSTS for one year, and /photos/ repeats it (its own add_header drops inherited ones)', () => {
+  const blocks = serverBlocks(readFileSync(NGINX, 'utf8'));
+  const tls = blocks.find((b) => /listen\s+443\b/.test(b));
+  assert.ok(tls, 'the 443 block');
+  const HSTS = /^\s*add_header\s+Strict-Transport-Security\s+"max-age=31536000"\s+always\s*;/m;
+  assert.match(topLevel(tls), HSTS);
+  const photos = tls.match(/location\s+\/photos\/\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(photos, /add_header/);
+  assert.match(photos, HSTS);
+});
+
 test('logrotate keeps the cron ops logs and drops the pm2 logs', () => {
   const text = readFileSync(LOGROTATE, 'utf8');
   assert.match(text, /^\/var\/log\/greenthumb-\*\.log \{/m);

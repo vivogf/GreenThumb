@@ -9,14 +9,14 @@ import { hashRecoveryKey } from "./recoveryKey";
 
 const VALID_KEY = "3f2a9c1e-7b4d-4e8a-9c2f-1a2b3c4d5e6f";
 const PENDING_KEY = "0b1c2d3e-4f50-4a6b-8c7d-9e0f1a2b3c4d";
-const LEGACY_KEY = "11112222-3333-4444-8555-666677778888";
 const USER = { id: 77, name: "Fern" };
 
 let calls: string[];
 let logs: string[];
 const original = { log: console.log, warn: console.warn, error: console.error, info: console.info, debug: console.debug };
 
-// The plaintext lookup behaves like the real uuid column: a non-UUID value makes Postgres throw with the value in the message.
+let commitResult: "committed" | "not_pending";
+
 const store: LoginRecoveryStore = {
   async getUserByCurrentOrPendingKeyHash(hash) {
     calls.push(`hash:${hash}`);
@@ -24,17 +24,9 @@ const store: LoginRecoveryStore = {
     if (hash === hashRecoveryKey(PENDING_KEY)) return { user: USER as any, pending: true };
     return null;
   },
-  async getUserByRecoveryKey(key) {
-    calls.push(key);
-    if (!/^[0-9a-f-]{36}$/.test(key)) throw new Error(`invalid input syntax for type uuid: "${key}"`);
-    return key === LEGACY_KEY ? (USER as any) : null;
-  },
-  async setRecoveryKeyHash(userId, hash, canonicalKey) {
-    calls.push(`repair:${userId}:${hash}:${canonicalKey}`);
-  },
-  async commitPendingRecoveryKey(userId, pair, keepSid) {
-    calls.push(`commit:${userId}:${pair.key}:${pair.hash}:${keepSid}`);
-    return { status: "committed", user: USER as any };
+  async commitPendingRecoveryKey(userId, hash, keepSid) {
+    calls.push(`commit:${userId}:${hash}:${keepSid}`);
+    return commitResult === "committed" ? { status: "committed", user: USER as any } : { status: "not_pending" };
   },
 };
 
@@ -57,6 +49,7 @@ after(async () => {
 
 beforeEach(() => {
   calls = [];
+  commitResult = "committed";
   logs = [];
   const capture = (...args: unknown[]) => { logs.push(args.map((a) => (a instanceof Error ? `${a.message} ${a.stack}` : String(a))).join(" ")); };
   console.log = capture; console.warn = capture; console.error = capture; console.info = capture; console.debug = capture;
@@ -99,7 +92,7 @@ test("a UUID with no account gets 401 and only a code in the log", async () => {
   const { status, body } = await login(unknown);
   assert.equal(status, 401);
   assert.deepEqual(body, { error: "Invalid recovery key" });
-  assert.deepEqual(calls, [`hash:${hashRecoveryKey(unknown)}`, unknown]);
+  assert.deepEqual(calls, [`hash:${hashRecoveryKey(unknown)}`], "one lookup by hash, no plaintext fallback");
   assertLogsClean(unknown);
 });
 
@@ -116,15 +109,18 @@ test("a pending-key hit commits it with this request's sid as keepSid and signs 
   assert.deepEqual(body, { user: USER });
   assert.deepEqual(calls, [
     `hash:${hashRecoveryKey(PENDING_KEY)}`,
-    `commit:${USER.id}:${PENDING_KEY}:${hashRecoveryKey(PENDING_KEY)}:sid-of-this-request`,
+    `commit:${USER.id}:${hashRecoveryKey(PENDING_KEY)}:sid-of-this-request`,
   ]);
   assertLogsClean(PENDING_KEY);
 });
 
-test("a plaintext-only hit repairs the hash on the condition that the key is still this one", async () => {
-  const { status } = await login(LEGACY_KEY);
-  assert.equal(status, 200);
-  assert.deepEqual(calls, [`hash:${hashRecoveryKey(LEGACY_KEY)}`, LEGACY_KEY, `repair:${USER.id}:${hashRecoveryKey(LEGACY_KEY)}:${LEGACY_KEY}`]);
+test("a pending-key hit whose commit finds it no longer pending is 401", async () => {
+  commitResult = "not_pending";
+  const { status, body } = await login(PENDING_KEY);
+  assert.equal(status, 401);
+  assert.deepEqual(body, { error: "Invalid recovery key" });
+  assert.equal(calls.length, 2, "lookup and commit only");
+  assertLogsClean(PENDING_KEY);
 });
 
 test("a missing key keeps the old 400 response", async () => {

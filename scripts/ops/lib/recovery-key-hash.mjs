@@ -19,8 +19,9 @@ const HASH = /^[0-9a-f]{64}$/;
  * Counts only: rows, rows whose stored hash differs from the recomputed one, rows without a hash;
  * rows with a pending rotation, pending values of the wrong shape, pending values equal to the row's
  * own current hash (a commit that did not clear pending).
+ * plaintext: false = after migration 009 there is no key to recompute from, so mismatched is null.
  */
-export function countRecoveryHashes(rows) {
+export function countRecoveryHashes(rows, { plaintext = true } = {}) {
   let total = 0;
   let mismatched = 0;
   let missing = 0;
@@ -30,7 +31,7 @@ export function countRecoveryHashes(rows) {
   for (const row of rows) {
     total += 1;
     if (row.recovery_key_hash == null) missing += 1;
-    else if (row.recovery_key_hash !== hashRecoveryKey(row.recovery_key)) mismatched += 1;
+    else if (plaintext && row.recovery_key_hash !== hashRecoveryKey(row.recovery_key)) mismatched += 1;
     const p = row.pending_recovery_key_hash;
     if (p != null) {
       pending += 1;
@@ -39,7 +40,7 @@ export function countRecoveryHashes(rows) {
     }
   }
   return {
-    total, mismatched, null: missing,
+    total, mismatched: plaintext ? mismatched : null, null: missing,
     pending, pending_malformed: pendingMalformed, pending_is_current: pendingIsCurrent,
   };
 }

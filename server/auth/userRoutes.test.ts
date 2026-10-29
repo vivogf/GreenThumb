@@ -9,7 +9,7 @@ import { jsonBodyParser } from "../http";
 import { hashRecoveryKey } from "./recoveryKey";
 import { registerUserRoutes } from "./userRoutes";
 
-// A users row as the database holds it in stage 1: both key columns plus a column no response may carry.
+// A users row as the database holds it after migration 009: hashes only, plus a column no response may carry.
 type Row = {
   id: number;
   name: string | null;
@@ -17,7 +17,6 @@ type Row = {
   timezone: string | null;
   last_notified_date: string | null;
   season_mode: "auto" | "north" | "south" | "off";
-  recovery_key: string;
   recovery_key_hash: string;
   pending_recovery_key_hash: string | null;
   created_at: Date;
@@ -31,15 +30,18 @@ let calls: string[];
 let logs: string[];
 let failNext: string | null;
 // Pauses inside the fake store, so a test can interleave two requests at a chosen point.
-let hooks: { afterLookup?: () => Promise<void>; beforeCommit?: () => Promise<void>; beforeRepair?: () => Promise<void> };
+let hooks: { afterLookup?: () => Promise<void>; beforeCommit?: () => Promise<void> };
+// Every argument the store received, to prove a plaintext key never reaches it.
+let storeArgs: unknown[];
 const original = { log: console.log, warn: console.warn, error: console.error, info: console.info, debug: console.debug };
 
 function storeError(): Error {
   return Object.assign(new Error('connection to "db.internal" failed'), { code: "ECONNREFUSED" });
 }
 
-function check(method: string) {
+function check(method: string, ...args: unknown[]) {
   calls.push(method);
+  storeArgs.push(...args);
   if (failNext === method) {
     failNext = null;
     throw storeError();
@@ -55,13 +57,6 @@ function sessionsOf(userId: number): Promise<string[]> {
   });
 }
 
-/** What the migration 008 trigger does on every write of recovery_key: hash follows the key, pending is cleared. */
-function writeKey(row: Row, key: string) {
-  row.recovery_key = key;
-  row.recovery_key_hash = hashRecoveryKey(key);
-  row.pending_recovery_key_hash = null;
-}
-
 async function deleteOtherSessions(userId: number, keepSid: string) {
   for (const sid of await sessionsOf(userId)) {
     if (sid !== keepSid) await new Promise((r) => sessions.destroy(sid, r));
@@ -69,15 +64,15 @@ async function deleteOtherSessions(userId: number, keepSid: string) {
 }
 
 // Fake store with the real store's contract. It returns whole rows on purpose, so the routes must pick the
-// public fields themselves. The old call shapes (no key pair, no sid) also work, like the database DEFAULT.
+// public fields themselves. The store gets hashes only, never a key.
 // Each row check-and-write runs without an await in between: the same atomicity as one conditional UPDATE.
 const store = {
-  async createAnonymousUser(name?: string, pair?: { key: string; hash: string }) {
-    check("createAnonymousUser");
-    const key = pair?.key ?? randomUUID();
+  async createAnonymousUser(name: string | undefined, hash: string) {
+    check("createAnonymousUser", name, hash);
+    assert.match(hash, /^[0-9a-f]{64}$/, "create stores a hash");
     const row: Row = {
       id: nextId++, name: name || null, notification_time: "09:00", timezone: null, last_notified_date: null,
-      season_mode: "auto", recovery_key: key, recovery_key_hash: pair?.hash ?? hashRecoveryKey(key),
+      season_mode: "auto", recovery_key_hash: hash,
       pending_recovery_key_hash: null, created_at: new Date("2026-10-28T10:00:00Z"), internal_extra: "never-in-a-response",
     };
     rows.push(row);
@@ -89,44 +84,34 @@ const store = {
     return row ? { ...row } : null;
   },
   async getUserByCurrentOrPendingKeyHash(hash: string) {
-    check("getUserByCurrentOrPendingKeyHash");
+    check("getUserByCurrentOrPendingKeyHash", hash);
     const row = rows.find((r) => r.recovery_key_hash === hash) ?? rows.find((r) => r.pending_recovery_key_hash === hash);
     const hit = row ? { user: { ...row }, pending: row.recovery_key_hash !== hash } : null;
     await hooks.afterLookup?.();
     return hit;
   },
-  async getUserByRecoveryKey(key: string) {
-    check("getUserByRecoveryKey");
-    const row = rows.find((r) => r.recovery_key === key);
-    return row ? { ...row } : null;
-  },
-  // UPDATE users SET recovery_key_hash = $hash WHERE id = $id AND recovery_key = $canonicalKey
-  async setRecoveryKeyHash(userId: number, hash: string, canonicalKey: string) {
-    check("setRecoveryKeyHash");
-    await hooks.beforeRepair?.();
-    const row = rows.find((r) => r.id === userId && r.recovery_key === canonicalKey);
-    if (row) row.recovery_key_hash = hash;
-  },
   async setPendingRecoveryKey(userId: number, hash: string) {
-    check("setPendingRecoveryKey");
+    check("setPendingRecoveryKey", hash);
     const row = rows.find((r) => r.id === userId);
     if (!row) return null;
     row.pending_recovery_key_hash = hash;
     return { ...row };
   },
   // One transaction: UPDATE ... WHERE id = $u AND pending = $h, then (1 row) DELETE the other sessions.
-  async commitPendingRecoveryKey(userId: number, pair: { key: string; hash: string }, keepSid: string) {
-    check("commitPendingRecoveryKey");
+  async commitPendingRecoveryKey(userId: number, hash: string, keepSid: string) {
+    check("commitPendingRecoveryKey", hash);
+    assert.match(hash, /^[0-9a-f]{64}$/, "commit gets a hash");
     await hooks.beforeCommit?.();
     const row = rows.find((r) => r.id === userId);
     if (!row) return { status: "not_found" as const };
-    if (row.pending_recovery_key_hash === pair.hash) {
-      writeKey(row, pair.key);
+    if (row.pending_recovery_key_hash === hash) {
+      row.recovery_key_hash = hash;
+      row.pending_recovery_key_hash = null;
       const user = { ...row };
       await deleteOtherSessions(userId, keepSid);
       return { status: "committed" as const, user };
     }
-    if (row.recovery_key_hash === pair.hash) return { status: "already_current" as const, user: { ...row } };
+    if (row.recovery_key_hash === hash) return { status: "already_current" as const, user: { ...row } };
     return { status: "not_pending" as const };
   },
   async updateUserTimezone(userId: number, timezone: string) {
@@ -178,6 +163,7 @@ beforeEach(() => {
   logs = [];
   failNext = null;
   hooks = {};
+  storeArgs = [];
   const capture = (...args: unknown[]) => { logs.push(args.map((a) => (a instanceof Error ? `${a.message} ${a.stack}` : typeof a === "string" ? a : JSON.stringify(a))).join(" ")); };
   console.log = capture; console.warn = capture; console.error = capture; console.info = capture; console.debug = capture;
 });
@@ -239,9 +225,10 @@ test("T3/T4/T7: create answers the public user plus the new key once, with no-st
   assert.deepEqual(Object.keys(reply.body).sort(), ["user"]);
   assert.deepEqual(Object.keys(reply.body.user).sort(), [...PUBLIC_FIELDS, "recovery_key"].sort());
   assertNoSecrets("create", reply.body, [key], "$.user.recovery_key");
-  // The key was generated by the route (Node) and both columns were written with it.
-  assert.equal(rows[0].recovery_key, key);
+  // The key was generated by the route (Node); only its hash reached the store.
   assert.equal(rows[0].recovery_key_hash, hashRecoveryKey(key));
+  assert.ok(!("recovery_key" in rows[0]), "no plaintext column");
+  assertStoreNeverSawKey([key]);
 });
 
 test("T3/T4: /me, login, timezone, notification time and season mode carry neither key nor hash", async () => {
@@ -281,8 +268,7 @@ test("R1: regenerate answers pending_recovery_key outside user, no-store; the cu
   assert.match(newKey, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   assert.notEqual(newKey, oldKey);
   assertNoSecrets("regenerate", r.body, [oldKey, newKey], "$.pending_recovery_key");
-  assert.equal(rows[0].recovery_key, oldKey, "the current key is unchanged");
-  assert.equal(rows[0].recovery_key_hash, hashRecoveryKey(oldKey));
+  assert.equal(rows[0].recovery_key_hash, hashRecoveryKey(oldKey), "the current key is unchanged");
   assert.equal(rows[0].pending_recovery_key_hash, hashRecoveryKey(newKey), "only the pending hash is written");
 
   assert.equal((await me(other)).status, 200, "another session of the user is alive");
@@ -297,7 +283,7 @@ test("R2: login with the current key keeps the pending key", async () => {
   assert.equal(r.status, 200);
   assertNoSecrets("login K1", r.body, [oldKey, newKey], null);
   assert.equal(rows[0].pending_recovery_key_hash, hashRecoveryKey(newKey));
-  assert.equal(rows[0].recovery_key, oldKey);
+  assert.equal(rows[0].recovery_key_hash, hashRecoveryKey(oldKey));
 });
 
 test("R3: login with the pending key commits it: other sessions revoked, then the old key is 401", async () => {
@@ -310,9 +296,9 @@ test("R3: login with the pending key commits it: other sessions revoked, then th
   assert.equal(r.body.user.id, 1);
   assertNoSecrets("login K2", r.body, [oldKey, newKey], null);
   assert.deepEqual(calls, ["getUserByCurrentOrPendingKeyHash", "commitPendingRecoveryKey"], "one lookup, then the commit");
-  assert.equal(rows[0].recovery_key, newKey);
   assert.equal(rows[0].recovery_key_hash, hashRecoveryKey(newKey));
   assert.equal(rows[0].pending_recovery_key_hash, null);
+  assertStoreNeverSawKey([oldKey, newKey]);
 
   assert.equal((await me(r.cookie)).status, 200, "the signing-in session is kept");
   assert.equal((await me(web)).status, 401, "the other session of the user is revoked");
@@ -363,7 +349,7 @@ test("R6: confirm of a key that is not pending is 409 not_pending, changes nothi
   r = await confirm(randomUUID(), cookie);
   assert.equal(r.status, 409);
   assert.deepEqual(r.body, { code: "not_pending" });
-  assert.equal(rows[0].recovery_key, oldKey);
+  assert.equal(rows[0].recovery_key_hash, hashRecoveryKey(oldKey));
   assert.equal(rows[0].pending_recovery_key_hash, hashRecoveryKey(newKey), "the pending key survives a wrong confirm");
   assert.equal((await me(other)).status, 200);
   assert.equal((await me(cookie)).status, 200);
@@ -404,14 +390,6 @@ test("R8: a second regenerate overwrites pending: the first new key gets 409 on 
   assert.equal((await confirm(k3, cookie)).body.status, "committed");
 });
 
-test("R9: a key write by the old build (trigger) drops the pending key", async () => {
-  const { cookie } = await createUser();
-  const { key: k2 } = await regenerate(cookie);
-  writeKey(rows[0], randomUUID());
-  assert.equal((await confirm(k2, cookie)).status, 409);
-  assert.equal((await login(k2)).status, 401);
-});
-
 test("R10: confirm and login with the new key in either order never give 401", async () => {
   // a) login found the pending hit, confirm commits before the login's commit runs.
   {
@@ -430,7 +408,7 @@ test("R10: confirm and login with the new key in either order never give 401", a
     assert.equal(c.status, 200);
     assert.equal(c.body.status, "committed");
     assert.equal(l.status, 200, "login after a concurrent commit is not 401");
-    assert.equal(rows[0].recovery_key, key);
+    assert.equal(rows[0].recovery_key_hash, hashRecoveryKey(key));
   }
   // b) confirm passed its session check, the login commits first (and revokes the confirming session).
   {
@@ -459,21 +437,19 @@ test("R10: confirm and login with the new key in either order never give 401", a
     assert.notEqual(l.status, 401, `login, round ${i}`);
     assert.equal(l.status, 200, `login, round ${i}`);
     assert.equal(c.status, 200, `confirm, round ${i}`);
-    assert.equal(rows[0].recovery_key, key);
+    assert.equal(rows[0].recovery_key_hash, hashRecoveryKey(key));
   }
 });
 
-test("R11: a hash repair after the plaintext fallback cannot bring back a key rotated meanwhile", async () => {
+test("R11: a pending key overwritten between the login lookup and its commit is 401, and the newer pending key works", async () => {
   const { cookie, key: oldKey } = await createUser();
-  rows[0].recovery_key_hash = "0".repeat(64);
-  const { key: newKey } = await regenerate(cookie);
-  // Between the fallback hit on the old key and its repair, the new key is committed.
-  hooks.beforeRepair = async () => { hooks.beforeRepair = undefined; writeKey(rows[0], newKey); };
-  const r = await login(oldKey);
-  assert.equal(r.status, 200, "the old key was right when it was checked");
-  assert.equal(rows[0].recovery_key_hash, hashRecoveryKey(newKey), "the repair did not resurrect the old key");
-  assert.equal((await login(oldKey)).status, 401);
-  assert.equal((await login(newKey)).status, 200);
+  const { key: k2 } = await regenerate(cookie);
+  let k3 = "";
+  hooks.afterLookup = async () => { hooks.afterLookup = undefined; k3 = (await regenerate(cookie)).key; };
+  const r = await login(k2);
+  assert.equal(r.status, 401, "k2 is no longer pending when the commit runs");
+  assert.equal((await login(oldKey)).status, 200, "the current key is untouched");
+  assert.equal((await login(k3)).status, 200);
 });
 
 test("R12: /me answers 503 on a store failure, never 401", async () => {
@@ -485,7 +461,7 @@ test("R12: /me answers 503 on a store failure, never 401", async () => {
   assert.doesNotMatch(logs.join("\n"), /db\.internal/);
 });
 
-test("T5: login by hash hit is 200 and does not touch the plaintext column", async () => {
+test("T5: login by hash hit is 200 with one lookup and nothing else", async () => {
   const { key } = await createUser();
   calls = [];
   const r = await call("POST", "/api/auth/login-recovery", { recoveryKey: key.toUpperCase() });
@@ -493,38 +469,22 @@ test("T5: login by hash hit is 200 and does not touch the plaintext column", asy
   assert.deepEqual(calls, ["getUserByCurrentOrPendingKeyHash"]);
 });
 
-test("T5: hash miss + plaintext hit is 200, repairs the hash and logs hash_miss with the user id only", async () => {
+test("T5: a hash miss is 401 after that one lookup: there is no plaintext fallback", async () => {
   const { key } = await createUser();
   rows[0].recovery_key_hash = "0".repeat(64);
-  logs = [];
+  calls = [];
   const r = await call("POST", "/api/auth/login-recovery", { recoveryKey: key });
-  assert.equal(r.status, 200);
-  assert.equal(r.body.user.id, rows[0].id);
-  assert.equal(rows[0].recovery_key_hash, hashRecoveryKey(key), "the hash is repaired");
-  assert.ok(logs.includes(`login-recovery: hash_miss user=${rows[0].id}`), logs.join("\n"));
-  assertLogsClean([key]);
-});
-
-test("T5: a failed hash repair still signs the user in", async () => {
-  const { key } = await createUser();
-  rows[0].recovery_key_hash = "0".repeat(64);
-  failNext = "setRecoveryKeyHash";
-  const r = await call("POST", "/api/auth/login-recovery", { recoveryKey: key });
-  assert.equal(r.status, 200);
-});
-
-test("T5: both lookups miss → 401", async () => {
-  await createUser();
-  const r = await call("POST", "/api/auth/login-recovery", { recoveryKey: randomUUID() });
   assert.equal(r.status, 401);
   assert.deepEqual(r.body, { error: "Invalid recovery key" });
+  assert.deepEqual(calls, ["getUserByCurrentOrPendingKeyHash"]);
+  assert.equal((await call("POST", "/api/auth/login-recovery", { recoveryKey: randomUUID() })).status, 401);
 });
 
-test("T5: a store failure in either lookup is 503, never 401", async () => {
+test("T5: a store failure in the lookup or the commit is 503, never 401", async () => {
   const { key } = await createUser();
-  for (const method of ["getUserByCurrentOrPendingKeyHash", "getUserByRecoveryKey", "commitPendingRecoveryKey"]) {
-    rows[0].recovery_key_hash = "0".repeat(64);
+  for (const method of ["getUserByCurrentOrPendingKeyHash", "commitPendingRecoveryKey"]) {
     // The commit runs only for a pending hit.
+    rows[0].recovery_key_hash = method === "commitPendingRecoveryKey" ? "0".repeat(64) : hashRecoveryKey(key);
     rows[0].pending_recovery_key_hash = method === "commitPendingRecoveryKey" ? hashRecoveryKey(key) : null;
     failNext = method;
     const r = await call("POST", "/api/auth/login-recovery", { recoveryKey: key });
@@ -532,6 +492,11 @@ test("T5: a store failure in either lookup is 503, never 401", async () => {
     assert.deepEqual(r.body, { error: "Service unavailable" });
   }
 });
+
+function assertStoreNeverSawKey(keys: string[]) {
+  const seen = JSON.stringify(storeArgs);
+  for (const key of keys) assert.ok(!seen.includes(key), "a plaintext key reached the store");
+}
 
 function assertLogsClean(keys: string[]) {
   const all = logs.join("\n");
@@ -545,8 +510,7 @@ function assertLogsClean(keys: string[]) {
 test("T8: logs during create, login, regenerate, confirm and their failures contain neither key nor hash", async () => {
   const { cookie, key } = await createUser();
   await call("POST", "/api/auth/login-recovery", { recoveryKey: key });
-  rows[0].recovery_key_hash = "0".repeat(64);
-  await call("POST", "/api/auth/login-recovery", { recoveryKey: key });
+  await call("POST", "/api/auth/login-recovery", { recoveryKey: randomUUID() });
   const r = await call("POST", "/api/auth/regenerate-recovery-key", undefined, cookie);
   const newKey = r.body.pending_recovery_key;
   await call("POST", "/api/auth/login-recovery", { recoveryKey: key });
@@ -563,6 +527,7 @@ test("T8: logs during create, login, regenerate, confirm and their failures cont
   assert.equal((await call("POST", "/api/auth/create-anonymous", { name: "x" })).status, 500);
   assert.ok(logs.length > 0);
   assertLogsClean([key, newKey]);
+  assertStoreNeverSawKey([key, newKey]);
   assert.doesNotMatch(logs.join("\n"), /db\.internal/, "error messages are not logged");
 });
 

@@ -19,10 +19,9 @@ export const users = pgTable("users", {
   last_notified_date: text("last_notified_date"),
   // Seasonal watering (migration 006, check constraint there): auto | north | south | off.
   season_mode: text("season_mode").$type<"auto" | "north" | "south" | "off">().notNull().default("auto"),
-  // Stage 1 of the key hashing: the plaintext column stays until migration 009. Neither key column is ever
-  // selected for a response; server/auth/publicUser.ts holds the allow-list of columns that may be.
-  recovery_key: uuid("recovery_key").defaultRandom().notNull().unique(),
-  // hex SHA-256 of the canonical key (server/auth/recoveryKey.ts, migration 008: NOT NULL, unique, CHECK, trigger).
+  // hex SHA-256 of the canonical key (server/auth/recoveryKey.ts; migration 008: NOT NULL, unique, CHECK). The only
+  // stored form of the key: migration 009 dropped the plaintext column. Never selected for a response;
+  // server/auth/publicUser.ts holds the allow-list of columns that may be.
   recovery_key_hash: text("recovery_key_hash").notNull().unique(),
   // Two-phase rotation (migration 008): hash of the key issued by regenerate and not yet confirmed; NULL = none.
   pending_recovery_key_hash: text("pending_recovery_key_hash"),
@@ -31,7 +30,7 @@ export const users = pgTable("users", {
 
 export type User = typeof users.$inferSelect;
 export const insertUserSchema = createInsertSchema(users)
-  .omit({ id: true, created_at: true, recovery_key: true, recovery_key_hash: true, pending_recovery_key_hash: true });
+  .omit({ id: true, created_at: true, recovery_key_hash: true, pending_recovery_key_hash: true });
 export type InsertUser = z.infer<typeof insertUserSchema>;
 
 export const plants = pgTable("plants", {

@@ -42,3 +42,13 @@ test('countRecoveryHashes counts pending rotations (counts only, never a value)'
   assert.deepEqual(counts, { total: 4, mismatched: 0, null: 0, pending: 3, pending_malformed: 1, pending_is_current: 1 });
   for (const v of Object.values(counts)) assert.equal(typeof v, 'number');
 });
+
+test('after migration 009 (no plaintext column) mismatched is not computed; null and pending still are', () => {
+  const a = randomUUID();
+  const counts = countRecoveryHashes([
+    { recovery_key_hash: appHash(a), pending_recovery_key_hash: null },
+    { recovery_key_hash: appHash(randomUUID()), pending_recovery_key_hash: 'NOT-HEX' },
+    { recovery_key_hash: null, pending_recovery_key_hash: null },
+  ], { plaintext: false });
+  assert.deepEqual(counts, { total: 3, mismatched: null, null: 1, pending: 1, pending_malformed: 1, pending_is_current: 0 });
+});

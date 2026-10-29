@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { errorLabel } from "../logError";
 import { toPublicUser, type PublicUser } from "./publicUser";
-import { hashRecoveryKey, type RecoveryKeyPair } from "./recoveryKey";
+import { hashRecoveryKey } from "./recoveryKey";
 
 /** A login lookup hit; `pending` = the hash matched the pending key of a rotation, not the current one. */
 export type RecoveryKeyHit = { user: PublicUser; pending: boolean };
@@ -18,12 +18,8 @@ export type CommitResult =
 export interface LoginRecoveryStore {
   /** ONE query: the user whose current or pending hash is `hash`; a current match wins. */
   getUserByCurrentOrPendingKeyHash(hash: string): Promise<RecoveryKeyHit | null>;
-  /** Stage-1 fallback by the plaintext column (canonical key); goes away with the column in stage 2. */
-  getUserByRecoveryKey(canonicalKey: string): Promise<PublicUser | null>;
-  /** Sets the hash only while recovery_key is still `canonicalKey`: a rotation meanwhile must not be undone. */
-  setRecoveryKeyHash(userId: number, hash: string, canonicalKey: string): Promise<void>;
-  /** One transaction: conditional promote of the pending key, then (only if promoted) delete sessions but keepSid. */
-  commitPendingRecoveryKey(userId: number, key: RecoveryKeyPair, keepSid: string): Promise<CommitResult>;
+  /** One transaction: promote the pending key if it is still `hash`, then (only if promoted) delete sessions but keepSid. */
+  commitPendingRecoveryKey(userId: number, hash: string, keepSid: string): Promise<CommitResult>;
 }
 
 export type LoginRecoveryDeps = { store: LoginRecoveryStore; log?: (line: string) => void };
@@ -43,9 +39,8 @@ export function normalizeRecoveryKey(raw: string): string | null {
 
 /**
  * POST /api/auth/login-recovery { recoveryKey } → { user } (public fields only).
- * One lookup by the current OR the pending hash. A pending hit promotes the key (the
- * same commit as confirm, keeping this request's session). On a miss, the plaintext
- * column, and a hit there repairs the hash (a miss of the hash alone must never become a 401).
+ * One lookup by the current OR the pending hash; the store sees the hash only. A pending
+ * hit promotes the key (the same commit as confirm, keeping this request's session).
  * Client contract: 400 = malformed key, 401 = no account with this key (only 401
  * lets the KMP app erase a saved key), 503 = store failure. Logs carry an error code
  * or the user id, never the key or its hash.
@@ -70,25 +65,14 @@ export function createLoginRecoveryHandler(deps: LoginRecoveryDeps) {
       const hit = await deps.store.getUserByCurrentOrPendingKeyHash(hash);
       let user: PublicUser | null = hit?.user ?? null;
       if (hit?.pending) {
-        const result = await deps.store.commitPendingRecoveryKey(hit.user.id, { key, hash }, req.sessionID);
+        const result = await deps.store.commitPendingRecoveryKey(hit.user.id, hash, req.sessionID);
         if (result.status === "committed" || result.status === "already_current") {
           user = result.user;
           log(`login-recovery: pending key ${result.status} user=${user.id}`);
         } else {
-          // Overwritten or rotated between the lookup and the commit: the plaintext check below decides.
+          // Overwritten by a newer regenerate (or the user is gone) between the lookup and the commit:
+          // this key no longer opens the account.
           user = null;
-        }
-      }
-      if (!user) {
-        user = await deps.store.getUserByRecoveryKey(key);
-        if (user) {
-          log(`login-recovery: hash_miss user=${user.id}`);
-          try {
-            await deps.store.setRecoveryKeyHash(user.id, hash, key);
-          } catch (error) {
-            // The key is right; a failed repair must not cost the sign-in. The next login retries it.
-            log(`login-recovery: hash repair failed user=${user.id} (${errorLabel(error)})`);
-          }
         }
       }
       if (!user) {

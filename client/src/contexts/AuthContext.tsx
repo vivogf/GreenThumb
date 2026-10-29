@@ -9,8 +9,8 @@ interface AuthUser {
   created_at: string;
 }
 
-// The server sends recovery_key only in the create and regenerate answers. The caller shows it once;
-// it is never kept in the user state.
+// The server sends recovery_key only in the create answer (regenerate sends pending_recovery_key). The caller
+// shows it once; it is never kept in the user state.
 function withoutKey(user: AuthUser & { recovery_key?: string }): AuthUser {
   const { recovery_key: _key, ...rest } = user;
   return rest;

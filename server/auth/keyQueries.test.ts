@@ -4,7 +4,8 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import {
   commitPendingKeyQuery,
   currentOrPendingHashQuery,
-  repairKeyHashQuery,
+  insertUserQuery,
+  pinKeyHashQuery,
   setPendingKeyQuery,
   userWithCurrentFlagQuery,
 } from "./keyQueries";
@@ -12,7 +13,6 @@ import {
 // drizzle.mock() builds the real SQL with no connection, so these check the statements the store sends.
 const db = drizzle.mock();
 const H = "a".repeat(64);
-const KEY = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
 
 /** The select list / returning list: everything between SELECT and FROM, or after RETURNING. */
 function outputColumns(sql: string): string {
@@ -33,10 +33,20 @@ test("K1: login lookup is ONE query matching the current OR the pending hash, cu
   assertNoKeyColumnOut(q.sql);
 });
 
-test("K2: the hash repair is conditional on the plaintext key still being the one that was checked (P3)", () => {
-  const q = repairKeyHashQuery(db, 7, H, KEY).toSQL();
-  assert.match(q.sql, /^update "users" set "recovery_key_hash" = \$1 where \("users"\."id" = \$2 and "users"\."recovery_key" = \$3\)$/);
-  assert.deepEqual(q.params, [H, 7, KEY]);
+test("K2: create inserts the name and the hash only; the plaintext column is never named", () => {
+  const q = insertUserQuery(db, "Fern", H).toSQL();
+  assert.match(q.sql, /^insert into "users" \(.*\) values \(.*\) returning /);
+  const cols = q.sql.match(/^insert into "users" \(([^)]*)\)/)?.[1] ?? "";
+  assert.doesNotMatch(cols, /"recovery_key"/);
+  assert.match(cols, /"recovery_key_hash"/);
+  assert.ok(q.params.includes(H) && q.params.includes("Fern"), JSON.stringify(q.params));
+  assertNoKeyColumnOut(q.sql);
+});
+
+test("K2b: the pin after create sets the hash without naming recovery_key (the 008 trigger stays quiet)", () => {
+  const q = pinKeyHashQuery(db, 7, H).toSQL();
+  assert.match(q.sql, /^update "users" set "recovery_key_hash" = \$1 where "users"\."id" = \$2$/);
+  assert.deepEqual(q.params, [H, 7]);
 });
 
 test("K3: regenerate writes only the pending hash and returns public columns", () => {
@@ -46,13 +56,13 @@ test("K3: regenerate writes only the pending hash and returns public columns", (
   assertNoKeyColumnOut(q.sql);
 });
 
-test("K4: commit is one UPDATE conditional on the pending hash; stage 1 writes the plaintext key too", () => {
-  const q = commitPendingKeyQuery(db, 7, { key: KEY, hash: H }).toSQL();
+test("K4: commit is one UPDATE of the hashes conditional on the pending hash; no plaintext key", () => {
+  const q = commitPendingKeyQuery(db, 7, H).toSQL();
   assert.match(
     q.sql,
-    /^update "users" set "recovery_key" = \$1, "recovery_key_hash" = \$2, "pending_recovery_key_hash" = \$3 where \("users"\."id" = \$4 and "users"\."pending_recovery_key_hash" = \$5\) returning /,
+    /^update "users" set "recovery_key_hash" = \$1, "pending_recovery_key_hash" = \$2 where \("users"\."id" = \$3 and "users"\."pending_recovery_key_hash" = \$4\) returning /,
   );
-  assert.deepEqual(q.params, [KEY, H, null, 7, H]);
+  assert.deepEqual(q.params, [H, null, 7, H]);
   assertNoKeyColumnOut(q.sql);
 });
 

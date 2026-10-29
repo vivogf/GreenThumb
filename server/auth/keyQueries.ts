@@ -2,12 +2,11 @@ import { and, desc, eq, or, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { users } from "@shared/schema";
 import { publicUserColumns } from "./publicUser";
-import type { RecoveryKeyPair } from "./recoveryKey";
 
 /**
  * The recovery-key statements on users, as builders over `db` or a transaction, so
- * keyQueries.test.ts can render the exact SQL with drizzle.mock(). None selects or
- * returns a key column: the only key-derived output is a boolean.
+ * keyQueries.test.ts can render the exact SQL with drizzle.mock(). They take and write
+ * hashes only, and none selects or returns a key column: the only key-derived output is a boolean.
  */
 type Db = PgDatabase<PgQueryResultHKT, any, any>;
 
@@ -24,12 +23,25 @@ export function currentOrPendingHashQuery(db: Db, hash: string) {
     .limit(1);
 }
 
-/** Stage-1 hash repair after a plaintext hit: only while recovery_key is still the key that was checked. */
-export function repairKeyHashQuery(db: Db, userId: number, hash: string, canonicalKey: string) {
+/** Create: the row gets the name and the hash of the key just issued. */
+export function insertUserQuery(db: Db, name: string | null, hash: string) {
+  return db
+    .insert(users)
+    .values({ name, recovery_key_hash: hash })
+    .returning(publicUserColumns);
+}
+
+/**
+ * Create, second statement, same transaction. While the database still has migration 008's trigger (before 009),
+ * the INSERT fills the plaintext column from its DEFAULT and the trigger overwrites the hash with the hash of that
+ * random value. This UPDATE does not name recovery_key, so the trigger does not fire and the issued hash stays.
+ * After 009 it rewrites the same value.
+ */
+export function pinKeyHashQuery(db: Db, userId: number, hash: string) {
   return db
     .update(users)
     .set({ recovery_key_hash: hash })
-    .where(and(eq(users.id, userId), eq(users.recovery_key, canonicalKey)));
+    .where(eq(users.id, userId));
 }
 
 /** Regenerate: writes only the pending hash; the current key and the sessions stay. */
@@ -41,15 +53,12 @@ export function setPendingKeyQuery(db: Db, userId: number, hash: string) {
     .returning(publicUserColumns);
 }
 
-/**
- * Commit: promotes the pending key only if it is still `key.hash`. Stage 1 also writes the
- * plaintext column (the trigger recomputes the same hash and clears pending); stage 2 drops it.
- */
-export function commitPendingKeyQuery(db: Db, userId: number, key: RecoveryKeyPair) {
+/** Commit: promotes the pending key only if it is still `hash`. */
+export function commitPendingKeyQuery(db: Db, userId: number, hash: string) {
   return db
     .update(users)
-    .set({ recovery_key: key.key, recovery_key_hash: key.hash, pending_recovery_key_hash: null })
-    .where(and(eq(users.id, userId), eq(users.pending_recovery_key_hash, key.hash)))
+    .set({ recovery_key_hash: hash, pending_recovery_key_hash: null })
+    .where(and(eq(users.id, userId), eq(users.pending_recovery_key_hash, hash)))
     .returning(publicUserColumns);
 }
 

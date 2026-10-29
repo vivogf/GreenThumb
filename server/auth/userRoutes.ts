@@ -3,11 +3,12 @@ import type { SeasonMode } from "@shared/season/rule";
 import { createLoginRecoveryHandler, normalizeRecoveryKey, type LoginRecoveryStore } from "./loginRecovery";
 import { parseSeasonModeBody } from "./seasonMode";
 import { toPublicUser, type PublicUser } from "./publicUser";
-import { generateRecoveryKey, hashRecoveryKey, type RecoveryKeyPair } from "./recoveryKey";
+import { generateRecoveryKey, hashRecoveryKey } from "./recoveryKey";
 import { logError } from "../logError";
 
 export interface UserRoutesStore extends LoginRecoveryStore {
-  createAnonymousUser(name: string | undefined, recoveryKey: RecoveryKeyPair): Promise<PublicUser>;
+  /** Stores only the hash of the key just issued. */
+  createAnonymousUser(name: string | undefined, keyHash: string): Promise<PublicUser>;
   getUserById(id: number): Promise<PublicUser | null>;
   /** Writes only the pending hash; the current key and the sessions stay. */
   setPendingRecoveryKey(userId: number, pendingHash: string): Promise<PublicUser | null>;
@@ -18,7 +19,7 @@ export interface UserRoutesStore extends LoginRecoveryStore {
 
 export type UserRoutesDeps = { store: UserRoutesStore; requireAuth: RequestHandler; log?: (line: string) => void };
 
-/** Create's response: the key just issued, in user.recovery_key, never stored by a cache. */
+/** Create's response: the key just issued, in user.recovery_key, never stored by a cache (nor by the database). */
 function sendNewKey(res: Response, user: PublicUser, key: string) {
   res.set("Cache-Control", "no-store").json({ user: { ...toPublicUser(user), recovery_key: key } });
 }
@@ -31,7 +32,8 @@ function keyRouteError(res: Response, label: string, error: unknown) {
 /**
  * The account routes that answer with a user object. Every answer is toPublicUser(...).
  * Only two answers carry a key, both generated here in Node: create in user.recovery_key,
- * regenerate in pending_recovery_key (outside user: it is not the current key yet).
+ * regenerate in pending_recovery_key (outside user: it is not the current key yet). The store
+ * gets the hash only; after either answer the plaintext key exists nowhere on the server.
  */
 export function registerUserRoutes(app: Express, deps: UserRoutesDeps): void {
   const requireAuth = deps.requireAuth;
@@ -41,7 +43,7 @@ export function registerUserRoutes(app: Express, deps: UserRoutesDeps): void {
       const { name } = req.body;
       const recoveryKey = generateRecoveryKey();
 
-      const user = await deps.store.createAnonymousUser(name, recoveryKey);
+      const user = await deps.store.createAnonymousUser(name, recoveryKey.hash);
 
       req.session.userId = user.id;
 
@@ -103,11 +105,7 @@ export function registerUserRoutes(app: Express, deps: UserRoutesDeps): void {
         return res.status(400).json({ error: "Invalid recovery key" });
       }
 
-      const result = await deps.store.commitPendingRecoveryKey(
-        req.session.userId!,
-        { key, hash: hashRecoveryKey(key) },
-        req.sessionID,
-      );
+      const result = await deps.store.commitPendingRecoveryKey(req.session.userId!, hashRecoveryKey(key), req.sessionID);
       switch (result.status) {
         case "committed":
         case "already_current":

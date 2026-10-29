@@ -414,7 +414,10 @@ lists user ids). Install as in `docs/ops/photos.md`:
 ```bash
 crontab -l > /root/crontab.bak.$(date -u +%Y%m%dT%H%M%SZ)
 # copy deploy/cron/greenthumb.cron to /root/greenthumb.cron with scp first
-( crontab -l 2>/dev/null | grep -v -e 'greenthumb' ; grep -v '^#' /root/greenthumb.cron | sed '/^$/d' ) | crontab -
+# `|| true`: grep -v exits 1 when no other line is left, and under `set -e` that would install an empty crontab
+( crontab -l 2>/dev/null | grep -v -e 'greenthumb' || true ; grep -v '^#' /root/greenthumb.cron | sed '/^$/d' ) > /root/crontab.new
+[ "$(grep -c greenthumb /root/crontab.new)" -eq 3 ] || { echo "crontab.new: expected 3 greenthumb lines, not installed"; exit 1; }
+crontab /root/crontab.new && rm /root/crontab.new
 crontab -l | grep -c greenthumb                                                                 # 3
 crontab -l | grep -cF "$(grep '^PUSH_CHECK_API_KEY=' /var/www/greenthumb/.env | cut -d= -f2-)"  # 0
 ```

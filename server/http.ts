@@ -1,4 +1,5 @@
 import express, { type NextFunction, type Request, type Response } from "express";
+import { logError } from "./logError";
 
 export const JSON_BODY_LIMIT = "12mb";
 export const JSON_BODY_LIMIT_BYTES = 12 * 1024 * 1024;
@@ -39,6 +40,6 @@ export function jsonErrorHandler(err: any, _req: Request, res: Response, next: N
     return;
   }
 
-  console.error("Unhandled error:", err);
+  logError("Unhandled error", err);
   res.status(500).json({ error: "Internal Server Error" });
 }

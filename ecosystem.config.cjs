@@ -20,6 +20,9 @@ module.exports = {
     cwd: __dirname,
     script: 'dist/index.js',
     max_memory_restart: '450M',
+    // No user logs: app output names user ids, so pm2 keeps none of it.
+    out_file: '/dev/null',
+    error_file: '/dev/null',
     env: {
       ...loadEnv(path.join(__dirname, '.env')),
       NODE_ENV: 'production',

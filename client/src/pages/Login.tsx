@@ -32,8 +32,7 @@ export default function Login() {
   const handleCreateAccount = async () => {
     setLoading(true);
     try {
-      const newUser = await createAnonymousAccount(name || undefined);
-      setNewUserKey(newUser.recovery_key);
+      setNewUserKey(await createAnonymousAccount(name || undefined));
       setMode('show-key');
     } catch (error: any) {
       toast({

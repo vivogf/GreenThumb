@@ -11,13 +11,3 @@
     notifempty
     copytruncate
 }
-
-/root/.pm2/logs/greenthumb-*.log {
-    weekly
-    rotate 8
-    compress
-    delaycompress
-    missingok
-    notifempty
-    copytruncate
-}

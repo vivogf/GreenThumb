@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { PLANT_NOT_FOUND, requireOwnedPlant } from "../plants/ownership";
 import { encodeCursor, isEventId, parseEventsQuery, parseNoteInput, type CareEventType, type CursorKey } from "./careEvents";
+import { logError } from "../logError";
 
 export const EVENT_NOT_FOUND = Object.freeze({ error: "Event not found" });
 
@@ -34,7 +35,7 @@ export type JournalDeps = {
 };
 
 function serverError(res: Response, label: string, error: unknown) {
-  console.error(`${label}:`, error);
+  logError(label, error);
   res.status(500).json({ error: "Internal server error" });
 }
 

@@ -17,11 +17,12 @@ import { addDaysToDateString } from "@shared/care/userDate";
 import { plantsDueForWatering, userToday } from "./care/schedule";
 import { indexReminderData, reminderEligible, reminderFor } from "./push/reminders";
 import { notifTitle, plantCountText } from "./push/text";
-import { parseSeasonModeBody } from "./auth/seasonMode";
+import { registerUserRoutes } from "./auth/userRoutes";
 import webpush from "web-push";
 import { Expo } from "expo-server-sdk";
 import { getApps, initializeApp, cert, type App } from "firebase-admin/app";
 import { getMessaging, type Messaging } from "firebase-admin/messaging";
+import { logError } from "./logError";
 
 const expo = new Expo();
 
@@ -43,7 +44,8 @@ try {
   }
 } catch (err) {
   // A malformed JSON env var must not take the whole server down.
-  console.error("Failed to initialize firebase-admin (FCM disabled):", err);
+  // A JSON.parse message quotes the input, i.e. a piece of the service-account key.
+  logError("Failed to initialize firebase-admin (FCM disabled)", err);
   fcmApp = null;
 }
 
@@ -79,21 +81,8 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Auth routes - anonymous UUID-based authentication
-  app.post("/api/auth/create-anonymous", async (req: Request, res) => {
-    try {
-      const { name } = req.body;
-
-      const user = await storage.createAnonymousUser(name);
-
-      req.session.userId = user.id;
-
-      res.json({ user });
-    } catch (error: any) {
-      console.error("Create anonymous user error:", error);
-      res.status(400).json({ error: error.message });
-    }
-  });
+  // Account routes that answer with a user: server/auth/userRoutes.ts.
+  registerUserRoutes(app, { store: storage, requireAuth });
 
   app.post("/api/auth/logout", (req: Request, res) => {
     req.session.destroy((err) => {
@@ -102,137 +91,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json({ success: true });
     });
-  });
-
-  app.get("/api/auth/me", async (req: Request, res) => {
-    if (!req.session?.userId) {
-      return res.status(401).json({ error: "Not authenticated" });
-    }
-
-    const user = await storage.getUserById(req.session.userId);
-    if (!user) {
-      return res.status(401).json({ error: "User not found" });
-    }
-
-    res.json({ user });
-  });
-
-  // Login with recovery key
-  app.post("/api/auth/login-recovery", async (req: Request, res) => {
-    try {
-      const { recoveryKey } = req.body;
-
-      if (!recoveryKey || typeof recoveryKey !== 'string') {
-        return res.status(400).json({ error: "Recovery key is required" });
-      }
-
-      const user = await storage.getUserByRecoveryKey(recoveryKey.trim());
-      if (!user) {
-        return res.status(401).json({ error: "Invalid recovery key" });
-      }
-
-      req.session.userId = user.id;
-
-      res.json({ user });
-    } catch (error: any) {
-      console.error("Recovery login error:", error);
-      res.status(400).json({ error: error.message });
-    }
-  });
-
-  // Regenerate recovery key
-  app.post("/api/auth/regenerate-recovery-key", requireAuth, async (req: Request, res) => {
-    try {
-      const userId = req.session.userId!;
-
-      const user = await storage.regenerateRecoveryKey(userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      res.json({ user });
-    } catch (error: any) {
-      console.error("Regenerate recovery key error:", error);
-      res.status(400).json({ error: error.message });
-    }
-  });
-
-  app.patch("/api/auth/update-timezone", requireAuth, async (req: Request, res) => {
-    try {
-      const userId = req.session.userId!;
-      const { timezone } = req.body;
-
-      if (!timezone || typeof timezone !== 'string' || timezone.length > 64) {
-        return res.status(400).json({ error: "Invalid timezone" });
-      }
-
-      // Validate the IANA tz string by trying to format with it.
-      try {
-        new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(new Date());
-      } catch {
-        return res.status(400).json({ error: "Unknown IANA timezone" });
-      }
-
-      const user = await storage.updateUserTimezone(userId, timezone);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      res.json({ user });
-    } catch (error: any) {
-      console.error("Error updating timezone:", error);
-      res.status(400).json({ error: error.message });
-    }
-  });
-
-  app.patch("/api/auth/update-notification-time", requireAuth, async (req: Request, res) => {
-    try {
-      const userId = req.session.userId!;
-      const { notification_time } = req.body;
-
-      if (!notification_time || typeof notification_time !== 'string') {
-        return res.status(400).json({ error: "Invalid notification time" });
-      }
-
-      // Validate time format HH:MM
-      const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
-      if (!timeRegex.test(notification_time)) {
-        return res.status(400).json({ error: "Invalid time format. Use HH:MM (e.g., 09:00)" });
-      }
-
-      // Reminders are whole-hour only: the cron runs hourly (see
-      // isInNotificationWindow) so a sub-hour time would silently fire on the
-      // next hour boundary anyway. Normalize minutes to :00 here so even a
-      // legacy client that still sends HH:MM stores a clean whole-hour value.
-      const normalizedTime = `${notification_time.slice(0, 2)}:00`;
-
-      const user = await storage.updateUserNotificationTime(userId, normalizedTime);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      res.json({ user });
-    } catch (error: any) {
-      console.error("Error updating notification time:", error);
-      res.status(400).json({ error: error.message });
-    }
-  });
-
-  app.patch("/api/auth/update-season-mode", requireAuth, async (req: Request, res) => {
-    try {
-      const parsed = parseSeasonModeBody(req.body);
-      if (!parsed.ok) {
-        return res.status(400).json({ error: parsed.error });
-      }
-      const user = await storage.updateUserSeasonMode(req.session.userId!, parsed.mode);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-      res.json({ user });
-    } catch (error) {
-      console.error("Error updating season mode:", error);
-      res.status(500).json({ error: "Internal server error" });
-    }
   });
 
   // Plant routes (protected). Per-plant routes answer the same 404 for a
@@ -245,7 +103,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
 
   function plantRouteError(res: Response, label: string, error: unknown) {
-    console.error(`${label}:`, error);
+    logError(label, error);
     res.status(500).json({ error: "Internal server error" });
   }
 
@@ -420,7 +278,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({ success: true, subscription });
     } catch (error: any) {
-      console.error("Push subscribe error:", error);
+      console.error(`Push subscribe error for user ${req.session.userId}: ${error?.code ?? error?.name ?? "Error"}`);
       res.status(400).json({ error: error.message });
     }
   });
@@ -431,7 +289,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deletePushSubscription(userId);
       res.json({ success: true });
     } catch (error: any) {
-      console.error("Push unsubscribe error:", error);
+      logError("Push unsubscribe error", error);
       res.status(400).json({ error: error.message });
     }
   });
@@ -458,7 +316,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.saveExpoPushSubscription(userId, expo_push_token, lang);
       res.json({ ok: true });
     } catch (error: any) {
-      console.error("Expo subscribe error:", error);
+      console.error(`Expo subscribe error for user ${req.session.userId}: ${error?.code ?? error?.name ?? "Error"}`);
       res.status(400).json({ error: error.message });
     }
   });
@@ -469,7 +327,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteExpoPushSubscription(userId);
       res.json({ ok: true });
     } catch (error: any) {
-      console.error("Expo unsubscribe error:", error);
+      logError("Expo unsubscribe error", error);
       res.status(400).json({ error: error.message });
     }
   });
@@ -499,7 +357,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.saveFcmPushSubscription(userId, fcm_token.trim(), platform ?? 'android', lang);
       res.json({ ok: true });
     } catch (error: any) {
-      console.error("FCM subscribe error:", error);
+      console.error(`FCM subscribe error for user ${req.session.userId}: ${error?.code ?? error?.name ?? "Error"}`);
       res.status(400).json({ error: error.message });
     }
   });
@@ -510,7 +368,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteFcmPushSubscription(userId);
       res.json({ ok: true });
     } catch (error: any) {
-      console.error("FCM unsubscribe error:", error);
+      logError("FCM unsubscribe error", error);
       res.status(400).json({ error: error.message });
     }
   });
@@ -541,13 +399,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       ]);
       req.session.destroy((err) => {
         if (err) {
-          console.error("Account deletion: session destroy failed:", err);
+          logError("Account deletion: session destroy failed", err);
           return res.status(500).json({ error: "Could not log out" });
         }
         res.json({ success: true });
       });
     } catch (error: any) {
-      console.error("Account deletion error:", error);
+      logError("Account deletion error", error);
       res.status(400).json({ error: error.message });
     }
   });
@@ -584,7 +442,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({ success: true });
     } catch (error: any) {
-      console.error("Test notification error:", error);
+      console.error(`Test notification error for user ${userId}: ${error?.statusCode ?? error?.name ?? "Error"}`);
       // 410 Gone or 404 = subscription expired/invalid, 401/403 = VAPID mismatch
       if (error.statusCode === 410 || error.statusCode === 404 || error.statusCode === 401 || error.statusCode === 403) {
         await storage.deletePushSubscription(userId);
@@ -653,7 +511,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           notificationsSent.push(`User ${subscription.user_id}: ${body}`);
           notifiedUserIds.add(subscription.user_id);
         } catch (err: any) {
-          console.error(`Failed to send notification to user ${subscription.user_id}:`, err);
+          console.error(`Failed to send notification to user ${subscription.user_id}: ${err?.statusCode ?? err?.name ?? "Error"}`);
           // Remove invalid subscriptions
           if (err.statusCode === 410) {
             await storage.deletePushSubscription(subscription.user_id);
@@ -707,18 +565,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   fcmDoneUserIds.add(sub.user_id);
                 })
                 .catch((err: any) => {
-                  console.error(`FCM send error for user ${sub.user_id}:`, err?.message || err);
+                  console.error(`FCM send error for user ${sub.user_id}: ${err?.errorInfo?.code || err?.code || err?.name || 'Error'}`);
                   const code = err?.errorInfo?.code || err?.code || '';
                   if (code.includes('registration-token-not-registered') || code.includes('invalid-registration-token') || code === 'messaging/invalid-argument') {
                     storage.deleteFcmPushSubscription(sub.user_id).catch(e =>
-                      console.error(`Failed to delete stale FCM subscription for user ${sub.user_id}:`, e)
+                      logError(`Failed to delete stale FCM subscription for user ${sub.user_id}`, e)
                     );
                   }
                 })
             );
           } catch (err: any) {
             // Body-building errors — log and move on to the next subscriber.
-            console.error(`FCM branch error for user ${sub.user_id}:`, err);
+            logError(`FCM branch error for user ${sub.user_id}`, err);
           }
         }
         if (fcmSubsThisTick.length > 0) {
@@ -758,7 +616,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             tickets.forEach((ticket, i) => {
               const userId = expoMessageUserIds[cursor + i];
               if (ticket.status === 'error') {
-                console.error(`Expo push error for token ${chunk[i].to}:`, ticket.message);
+                console.error(`Expo push error for user ${userId}: ${ticket.details?.error ?? 'error'}`);
                 if (ticket.details?.error === 'DeviceNotRegistered') {
                   // Token is invalid — clean up
                   const sub = expoSubs.find(s => s.expo_push_token === chunk[i].to);
@@ -769,7 +627,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
             });
           } catch (err) {
-            console.error('Expo chunk send error:', err);
+            console.error(`Expo chunk send error: ${(err as any)?.code ?? (err as any)?.name ?? 'Error'}`);
             // Whole chunk failed — those users are NOT marked notified. With
             // the hourly window the next tick won't re-match them, so they
             // miss today's reminder (acceptable: transient Expo error).
@@ -786,7 +644,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           await storage.markUserNotified(userId, userToday(userById.get(userId), now));
         } catch (err) {
-          console.error(`Failed to mark user ${userId} as notified:`, err);
+          logError(`Failed to mark user ${userId} as notified`, err);
         }
       }
 
@@ -796,7 +654,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({ success: true, notificationsSent, marked: notifiedUserIds.size });
     } catch (error: any) {
-      console.error("Check plants error:", error);
+      logError("Check plants error", error);
       res.status(400).json({ error: error.message });
     }
   });

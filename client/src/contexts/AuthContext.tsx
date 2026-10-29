@@ -6,18 +6,31 @@ interface AuthUser {
   notification_time?: string;
   timezone?: string | null;
   season_mode?: string;
-  recovery_key: string;
   created_at: string;
 }
+
+// The server sends recovery_key only in the create and regenerate answers. The caller shows it once;
+// it is never kept in the user state.
+function withoutKey(user: AuthUser & { recovery_key?: string }): AuthUser {
+  const { recovery_key: _key, ...rest } = user;
+  return rest;
+}
+
+/** confirm-recovery-key outcome; not_pending = the shown key is not active, the old key still works. */
+export type ConfirmKeyResult = 'committed' | 'already_current' | 'not_pending';
 
 interface AuthContextType {
   user: AuthUser | null;
   loading: boolean;
-  createAnonymousAccount: (name?: string) => Promise<AuthUser>;
+  /** Resolves to the new recovery key, to show once. */
+  createAnonymousAccount: (name?: string) => Promise<string>;
   signInWithRecoveryKey: (recoveryKey: string) => Promise<void>;
   signOut: () => Promise<void>;
   updateUser: (userData: Partial<AuthUser>) => void;
-  regenerateRecoveryKey: () => Promise<void>;
+  /** Resolves to the new pending key, to show until confirmed. The current key still works until then. */
+  regenerateRecoveryKey: () => Promise<string>;
+  /** Promotes the pending key. A 401 (session gone) signs out locally and throws. */
+  confirmRecoveryKey: (recoveryKey: string) => Promise<ConfirmKeyResult>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -35,7 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (response.ok) {
           const data = await response.json();
-          setUser(data.user);
+          setUser(withoutKey(data.user));
         }
       } catch (error) {
         console.error('Session check failed:', error);
@@ -47,7 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     checkSession();
   }, []);
 
-  const createAnonymousAccount = async (name?: string): Promise<AuthUser> => {
+  const createAnonymousAccount = async (name?: string): Promise<string> => {
     const response = await fetch('/api/auth/create-anonymous', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -61,8 +74,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error(data.error || 'Failed to create account');
     }
 
-    setUser(data.user);
-    return data.user;
+    setUser(withoutKey(data.user));
+    return data.user.recovery_key;
   };
 
   const signInWithRecoveryKey = async (recoveryKey: string) => {
@@ -79,7 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error(data.error || 'Invalid recovery key');
     }
 
-    setUser(data.user);
+    setUser(withoutKey(data.user));
   };
 
   const signOut = async () => {
@@ -98,7 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser((prevUser) => prevUser ? { ...prevUser, ...userData } : null);
   };
 
-  const regenerateRecoveryKey = async () => {
+  const regenerateRecoveryKey = async (): Promise<string> => {
     const response = await fetch('/api/auth/regenerate-recovery-key', {
       method: 'POST',
       credentials: 'include',
@@ -110,7 +123,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error(data.error || 'Failed to regenerate recovery key');
     }
 
-    setUser(data.user);
+    if (typeof data.pending_recovery_key !== 'string') {
+      throw new Error('Failed to regenerate recovery key');
+    }
+    setUser(withoutKey(data.user));
+    return data.pending_recovery_key;
+  };
+
+  const confirmRecoveryKey = async (recoveryKey: string): Promise<ConfirmKeyResult> => {
+    const response = await fetch('/api/auth/confirm-recovery-key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recoveryKey }),
+      credentials: 'include',
+    });
+
+    if (response.status === 409) return 'not_pending';
+    if (response.status === 401) {
+      // This session was revoked (another device signed in with the new key): back to the login screen.
+      setUser(null);
+      throw new Error('Not authenticated');
+    }
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to confirm recovery key');
+    }
+
+    setUser(withoutKey(data.user));
+    return data.status;
   };
 
   const value = {
@@ -121,6 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signOut,
     updateUser,
     regenerateRecoveryKey,
+    confirmRecoveryKey,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

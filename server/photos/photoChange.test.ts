@@ -92,11 +92,15 @@ test("removePhotoObjects skips nulls, dedupes and never throws", async () => {
     async deleteMany() { throw new Error("boom"); },
   };
   const origError = console.error;
-  console.error = () => {};
+  const logged: string[] = [];
+  console.error = (...args: unknown[]) => { logged.push(args.map(String).join(" ")); };
   try {
-    await removePhotoObjects(failing, ["p/a.jpg"]);
+    await removePhotoObjects(failing, ["p/3f0c8a52-7b1e-4c2d-9a6f-1e2d3c4b5a69.jpg"]);
   } finally {
     console.error = origError;
   }
+  // The object key is the unguessable public photo URL, so it must not reach the log.
+  assert.equal(logged.length, 1);
+  assert.ok(!logged[0].includes("3f0c8a52"), logged[0]);
   await removePhotoObjects(null, ["p/a.jpg"]);
 });

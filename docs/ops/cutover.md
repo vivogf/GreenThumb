@@ -140,4 +140,5 @@ Use this if the new VPS cannot serve the app after the flip.
 - The copied certificate is only a bridge: it expires 2026-12-27 and cannot renew on the new VPS. Step 6 replaces it.
 - `/photos/` responses are cached by nginx in `/var/cache/nginx/gt_photos` (max 1 GB, each entry at most 1 day, so a deleted photo leaves the cache within 1 day). To clear the cache:
   `rm -rf /var/cache/nginx/gt_photos/* && systemctl reload nginx`.
-- Logs: `/var/log/greenthumb-*.log` and pm2 logs rotate weekly (8 kept) via `/etc/logrotate.d/greenthumb`.
+- Logs: no app (pm2) or nginx logs; both go to `/dev/null` (M9, no user logs). The cron ops logs
+  `/var/log/greenthumb-*.log` rotate weekly (8 kept) via `/etc/logrotate.d/greenthumb`.

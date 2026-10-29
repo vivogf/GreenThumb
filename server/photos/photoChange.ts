@@ -1,5 +1,6 @@
 import { parsePhotoDataUrl, type ParsedPhoto } from "./dataUrl";
 import { keyForPhotoUrl, newPhotoLocation } from "./keys";
+import { logError } from "../logError";
 
 export const INVALID_PHOTO = "Invalid photo";
 
@@ -79,6 +80,7 @@ export async function removePhotoObjects(
   try {
     await store.deleteMany(unique);
   } catch (err: any) {
-    console.error(`Photo cleanup failed for ${unique.join(", ")}: ${err?.name ?? "Error"}`);
+    // Keys are the unguessable public photo URLs, so only their count is logged.
+    logError(`Photo cleanup failed for ${unique.length} object(s)`, err);
   }
 }

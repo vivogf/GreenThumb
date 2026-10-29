@@ -8,6 +8,7 @@ import { createPhotoHandler, photoPathNotFound } from "./route";
 import type { PhotoStore } from "./store";
 
 const UUID = "3f0c8a52-7b1e-4c2d-9a6f-1e2d3c4b5a69";
+const BROKEN = "9e8d7c6b-5a49-4382-b1a0-f9e8d7c6b5a4";
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 5]);
 const objects = new Map<string, Buffer>([[`p/${UUID}.jpg`, JPEG], [`p/${UUID}.png`, Buffer.from("png-bytes")]]);
 const requestedKeys: string[] = [];
@@ -19,6 +20,7 @@ const store: PhotoStore = {
   async list() { return []; },
   async getStream(key) {
     requestedKeys.push(key);
+    if (key === `p/${BROKEN}.jpg`) throw Object.assign(new Error(`read failed for ${key}`), { name: "S3ServiceException" });
     const bytes = objects.get(key);
     return bytes ? { body: Readable.from([bytes]), contentLength: bytes.length, etag: '"abc"' } : null;
   },
@@ -74,4 +76,20 @@ test("invalid names, unknown objects and other /photos paths are 404, never the 
   assert.equal(missing.status, 404);
   assert.equal(missing.headers.get("cache-control"), "no-store");
   await missing.text();
+});
+
+test("a storage read failure is 502 and the log names neither the object key nor the message", async () => {
+  const origError = console.error;
+  const logged: string[] = [];
+  console.error = (...args: unknown[]) => { logged.push(args.map(String).join(" ")); };
+  let res: Response;
+  try {
+    res = await fetch(`${base}/photos/${BROKEN}.jpg`);
+    await res.text();
+  } finally {
+    console.error = origError;
+  }
+  assert.equal(res.status, 502);
+  assert.equal(logged.length, 1);
+  assert.ok(!logged[0].includes("9e8d7c6b"), logged[0]);
 });

@@ -9,7 +9,10 @@ const plant = {
   water_frequency_days: 10,
   last_watered_date: "2025-12-10",
 };
-const user = { id: 4242, timezone: "Europe/Berlin", season_mode: "north", recovery_key: "changeme-recovery-key-0000" };
+const user = {
+  id: 4242, timezone: "Europe/Berlin", season_mode: "north", recovery_key: "changeme-recovery-key-0000",
+  recovery_key_hash: "db8055e0e0307d5a016bec4dc338d69875eb0fb7e614a8b125b08fb082095d98",
+};
 
 test("uses the species name when present and the plant name otherwise", () => {
   const withSpecies = buildDiagnosisContext({ plant, user, events: [], note: null });
@@ -40,6 +43,7 @@ test("never contains the user id, the recovery key or photo bytes", () => {
   const ctx = buildDiagnosisContext({ plant, user, events: [], note: "x" });
   assert.doesNotMatch(ctx, /4242/);
   assert.doesNotMatch(ctx, /changeme-recovery-key/);
+  assert.doesNotMatch(ctx, /db8055e0/);
   assert.doesNotMatch(ctx, /base64|data:image/);
   assert.doesNotMatch(ctx, new RegExp(plant.id));
 });

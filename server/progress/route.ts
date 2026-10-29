@@ -8,6 +8,7 @@ import {
   type AchievementId,
   type StoredAchievement,
 } from "./achievements";
+import { logError } from "../logError";
 
 export type ProgressPlant = StreakPlant & { has_cover_photo: boolean };
 
@@ -46,7 +47,7 @@ export function createProgressHandler(deps: ProgressDeps) {
           : evaluation.achievements;
       res.json({ streak, achievements });
     } catch (error) {
-      console.error("Error computing progress:", error);
+      logError("Error computing progress", error);
       res.status(500).json({ error: "Internal server error" });
     }
   };

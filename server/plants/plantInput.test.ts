@@ -31,6 +31,7 @@ test("PATCH strips id, user_id, created_at and unknown keys", () => {
     is_admin: true,
     foo: { bar: 1 },
     recovery_key: "x",
+    recovery_key_hash: "db8055e0e0307d5a016bec4dc338d69875eb0fb7e614a8b125b08fb082095d98",
   }, null));
   assert.deepEqual(data, { name: "ok" });
 });

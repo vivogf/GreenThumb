@@ -2,6 +2,7 @@ import { pipeline } from "node:stream/promises";
 import type { Request, RequestHandler, Response } from "express";
 import { contentTypeForFile, keyForFileName } from "./keys";
 import { PHOTO_CACHE_CONTROL, type PhotoObject, type PhotoStore } from "./store";
+import { logError } from "../logError";
 
 function notFound(res: Response) {
   res.status(404).set("Cache-Control", "no-store").type("text/plain").send("Not found");
@@ -39,7 +40,8 @@ export function createPhotoHandler(getStore: () => PhotoStore | null): RequestHa
         res.destroy();
         return;
       }
-      console.error(`Photo read failed for ${key}: ${err?.name ?? "Error"}`);
+      // The key is the unguessable public URL of the photo, so it is not logged.
+      logError("Photo read failed", err);
       res.status(502).set("Cache-Control", "no-store").type("text/plain").send("Photo unavailable");
     }
   };

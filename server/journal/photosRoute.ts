@@ -5,6 +5,7 @@ import { removePhotoObjects, type PhotoObjectStore } from "../photos/photoChange
 import { isEventId } from "./careEvents";
 import type { CareEventRow } from "./eventsRoute";
 import { parsePhotoInput } from "./photoInput";
+import { logError } from "../logError";
 
 export const PHOTO_NOT_FOUND = Object.freeze({ error: "Photo not found" });
 
@@ -37,7 +38,7 @@ export type TimelineDeps = {
 };
 
 function serverError(res: Response, label: string, error: unknown) {
-  console.error(`${label}:`, error);
+  logError(label, error);
   res.status(500).json({ error: "Internal server error" });
 }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -36,7 +36,7 @@ function urlBase64ToUint8Array(base64String: string) {
 
 export default function Profile() {
   const { t, i18n } = useTranslation();
-  const { user, signOut, updateUser, regenerateRecoveryKey } = useAuth();
+  const { user, signOut, updateUser, regenerateRecoveryKey, confirmRecoveryKey } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
@@ -46,8 +46,12 @@ export default function Profile() {
   // to the hour so it matches one of the dropdown options below.
   const [notificationTime, setNotificationTime] = useState(`${(user?.notification_time || '09:00').slice(0, 2)}:00`);
   const [isSavingTime, setIsSavingTime] = useState(false);
-  const [showRecoveryKey, setShowRecoveryKey] = useState(false);
+  // The pending key from the last regenerate, shown until "I saved it" confirms it; never stored anywhere else.
+  const [newRecoveryKey, setNewRecoveryKey] = useState<string | null>(null);
   const [isRegeneratingKey, setIsRegeneratingKey] = useState(false);
+  // Set synchronously, unlike the state above: a double click must not send two regenerates.
+  const regenerateInFlight = useRef(false);
+  const [isConfirmingKey, setIsConfirmingKey] = useState(false);
 
   const currentLang = i18n.language?.startsWith('ru') ? 'ru' : 'en';
 
@@ -236,8 +240,8 @@ export default function Profile() {
   };
 
   const handleCopyRecoveryKey = async () => {
-    if (user?.recovery_key) {
-      await navigator.clipboard.writeText(user.recovery_key);
+    if (newRecoveryKey) {
+      await navigator.clipboard.writeText(newRecoveryKey);
       toast({
         title: t('profile.copied'),
         description: t('profile.copiedHint'),
@@ -246,9 +250,11 @@ export default function Profile() {
   };
 
   const handleRegenerateKey = async () => {
+    if (regenerateInFlight.current) return;
+    regenerateInFlight.current = true;
     setIsRegeneratingKey(true);
     try {
-      await regenerateRecoveryKey();
+      setNewRecoveryKey(await regenerateRecoveryKey());
       toast({
         title: t('profile.keyRegenerated'),
         description: t('profile.keyRegeneratedHint'),
@@ -261,6 +267,30 @@ export default function Profile() {
       });
     }
     setIsRegeneratingKey(false);
+    regenerateInFlight.current = false;
+  };
+
+  const handleConfirmKey = async () => {
+    if (!newRecoveryKey) return;
+    setIsConfirmingKey(true);
+    try {
+      const result = await confirmRecoveryKey(newRecoveryKey);
+      if (result === 'not_pending') {
+        toast({ title: t('common.error'), description: t('profile.keyNotActive'), variant: 'destructive' });
+      } else {
+        toast({ title: t('profile.keyConfirmed'), description: t('profile.keyConfirmedHint') });
+      }
+      setNewRecoveryKey(null);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Not authenticated') {
+        setIsConfirmingKey(false);
+        setLocation('/login');
+        return;
+      }
+      // Network or server error: keep the key on screen so the user can retry; the old key still works.
+      toast({ title: t('common.error'), description: t('common.error'), variant: 'destructive' });
+    }
+    setIsConfirmingKey(false);
   };
 
   return (
@@ -402,47 +432,58 @@ export default function Profile() {
 
           {/* Recovery Key Section */}
           <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-2">
-                <Key className="w-4 h-4 text-primary" />
-                <Label className="text-sm font-medium">{t('profile.recoveryKey')}</Label>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowRecoveryKey(!showRecoveryKey)}
-              >
-                {showRecoveryKey ? t('profile.hide') : t('profile.show')}
-              </Button>
+            <div className="flex items-center gap-2">
+              <Key className="w-4 h-4 text-primary" />
+              <Label className="text-sm font-medium">{t('profile.recoveryKey')}</Label>
             </div>
             <p className="text-xs text-muted-foreground">
               {t('profile.recoveryKeyHint')}
             </p>
-            {showRecoveryKey && user?.recovery_key && (
+            {newRecoveryKey && (
               <div className="space-y-2">
+                <p className="text-xs font-medium">{t('profile.newKeyShownOnce')}</p>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 p-2 bg-background rounded text-xs font-mono break-all border">
-                    {user.recovery_key}
+                    {newRecoveryKey}
                   </code>
                   <Button
                     variant="outline"
                     size="icon"
                     onClick={handleCopyRecoveryKey}
+                    aria-label={t('profile.copied')}
                   >
                     <Copy className="w-4 h-4" />
                   </Button>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleRegenerateKey}
-                  disabled={isRegeneratingKey}
-                  className="w-full"
-                >
-                  <RefreshCw className={`w-4 h-4 mr-2 ${isRegeneratingKey ? 'animate-spin' : ''}`} />
-                  {isRegeneratingKey ? t('profile.generating') : t('profile.generateNewKey')}
+                <Button size="sm" onClick={handleConfirmKey} disabled={isConfirmingKey} className="w-full">
+                  {isConfirmingKey ? t('profile.confirmingKey') : t('profile.savedKey')}
                 </Button>
               </div>
+            )}
+            {!newRecoveryKey && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isRegeneratingKey}
+                    className="w-full"
+                  >
+                    <RefreshCw className={`w-4 h-4 mr-2 ${isRegeneratingKey ? 'animate-spin' : ''}`} />
+                    {isRegeneratingKey ? t('profile.generating') : t('profile.generateNewKey')}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{t('profile.regenerateConfirmTitle')}</AlertDialogTitle>
+                    <AlertDialogDescription>{t('profile.oldKeyStopsWorking')}</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleRegenerateKey}>{t('profile.generateNewKey')}</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             )}
           </div>
 

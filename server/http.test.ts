@@ -65,14 +65,17 @@ test("malformed JSON gets 400 {error}", async () => {
 test("unexpected errors get 500 with a generic message", () => {
   const res = fakeResponse();
   const origError = console.error;
-  console.error = () => {};
+  const logged: string[] = [];
+  console.error = (...args: unknown[]) => { logged.push(args.map((a) => (a instanceof Error ? `${a.message} ${a.stack}` : String(a))).join(" ")); };
   try {
-    jsonErrorHandler(new Error("db password leaked here"), {} as any, res, () => {});
+    jsonErrorHandler(Object.assign(new Error("db password leaked here"), { detail: "Key (recovery_key)=(leaked-detail)" }), {} as any, res, () => {});
   } finally {
     console.error = origError;
   }
   assert.equal(res.statusCode, 500);
   assert.deepEqual(res.body, { error: "Internal Server Error" });
+  assert.equal(logged.length, 1);
+  assert.doesNotMatch(logged[0], /db password|leaked-detail/);
 });
 
 test("errors after headers were sent go to the next handler", () => {

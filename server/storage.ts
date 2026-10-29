@@ -1,8 +1,13 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { plants, users, apiUsage, careEvents, plantPhotos, userAchievements, pushSubscriptions, expoPushSubscriptions, fcmPushSubscriptions, type Plant, type User, type InsertUser, type PushSubscription, type InsertPushSubscription, type ExpoPushSubscription, type FcmPushSubscription } from "@shared/schema";
+import { plants, users, apiUsage, careEvents, plantPhotos, userAchievements, pushSubscriptions, expoPushSubscriptions, fcmPushSubscriptions, type Plant, type PushSubscription, type InsertPushSubscription, type ExpoPushSubscription, type FcmPushSubscription } from "@shared/schema";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { PlantCreate, PlantPatch } from "./plants/plantInput";
+import { publicUserColumns, type PublicUser } from "./auth/publicUser";
+import { deleteOtherSessionsSql } from "./auth/sessions";
+import type { RecoveryKeyPair } from "./auth/recoveryKey";
+import type { CommitResult, RecoveryKeyHit } from "./auth/loginRecovery";
+import { commitPendingKeyQuery, currentOrPendingHashQuery, repairKeyHashQuery, setPendingKeyQuery, userWithCurrentFlagQuery } from "./auth/keyQueries";
 import type { SeasonMode } from "@shared/season/rule";
 import { inferCareEvents, type CursorKey } from "./journal/careEvents";
 import type { CareEventRow, DeleteNoteResult, JournalStore } from "./journal/eventsRoute";
@@ -43,16 +48,25 @@ const client = postgres(process.env.DATABASE_URL!);
 const db = drizzle(client);
 
 export interface IStorage extends UsageStore, UsageCounter, JournalStore, TimelineStore, ProgressStore {
-  // User methods
-  createAnonymousUser(name?: string): Promise<User>;
-  getUserById(id: number): Promise<User | null>;
-  getUserByRecoveryKey(recoveryKey: string): Promise<User | null>;
-  getAllUsers(): Promise<User[]>;
-  updateUserNotificationTime(userId: number, notificationTime: string): Promise<User | null>;
-  updateUserTimezone(userId: number, timezone: string): Promise<User | null>;
-  updateUserSeasonMode(userId: number, seasonMode: SeasonMode): Promise<User | null>;
+  // User methods. Every one selects and returns only publicUserColumns (server/auth/publicUser.ts).
+  /** Writes both key columns; the key pair comes from generateRecoveryKey(). */
+  createAnonymousUser(name: string | undefined, recoveryKey: RecoveryKeyPair): Promise<PublicUser>;
+  getUserById(id: number): Promise<PublicUser | null>;
+  /** One query by the current OR the pending hash (two-phase rotation); a current match wins. */
+  getUserByCurrentOrPendingKeyHash(hash: string): Promise<RecoveryKeyHit | null>;
+  /** Stage-1 fallback lookup by the plaintext column; removed with the column in stage 2. */
+  getUserByRecoveryKey(canonicalKey: string): Promise<PublicUser | null>;
+  /** Hash repair, only while recovery_key is still canonicalKey. */
+  setRecoveryKeyHash(userId: number, hash: string, canonicalKey: string): Promise<void>;
+  getAllUsers(): Promise<PublicUser[]>;
+  updateUserNotificationTime(userId: number, notificationTime: string): Promise<PublicUser | null>;
+  updateUserTimezone(userId: number, timezone: string): Promise<PublicUser | null>;
+  updateUserSeasonMode(userId: number, seasonMode: SeasonMode): Promise<PublicUser | null>;
   markUserNotified(userId: number, date: string): Promise<void>;
-  regenerateRecoveryKey(userId: number): Promise<User | null>;
+  /** Regenerate: writes only the pending hash; the current key and every session stay. */
+  setPendingRecoveryKey(userId: number, pendingHash: string): Promise<PublicUser | null>;
+  /** One transaction: promote the pending key if it is still `recoveryKey.hash`, then delete sessions but keepSid. */
+  commitPendingRecoveryKey(userId: number, recoveryKey: RecoveryKeyPair, keepSid: string): Promise<CommitResult>;
   
   // Plant methods
   addPlant(plant: PlantCreate & { user_id: string }): Promise<Plant>;
@@ -100,50 +114,50 @@ export interface IStorage extends UsageStore, UsageCounter, JournalStore, Timeli
 
 export class DbStorage implements IStorage {
   // User methods
-  async createAnonymousUser(name?: string): Promise<User> {
+  async createAnonymousUser(name: string | undefined, recoveryKey: RecoveryKeyPair): Promise<PublicUser> {
     const [result] = await db
       .insert(users)
-      .values({ name: name || null })
-      .returning();
+      .values({ name: name || null, recovery_key: recoveryKey.key, recovery_key_hash: recoveryKey.hash })
+      .returning(publicUserColumns);
     return result;
   }
 
-  async getUserById(id: number): Promise<User | null> {
+  async getUserById(id: number): Promise<PublicUser | null> {
     const [user] = await db
-      .select()
+      .select(publicUserColumns)
       .from(users)
       .where(eq(users.id, id));
     return user || null;
   }
 
-  async getAllUsers(): Promise<User[]> {
-    return await db.select().from(users);
+  async getAllUsers(): Promise<PublicUser[]> {
+    return await db.select(publicUserColumns).from(users);
   }
 
-  async updateUserNotificationTime(userId: number, notificationTime: string): Promise<User | null> {
+  async updateUserNotificationTime(userId: number, notificationTime: string): Promise<PublicUser | null> {
     const [result] = await db
       .update(users)
       .set({ notification_time: notificationTime })
       .where(eq(users.id, userId))
-      .returning();
+      .returning(publicUserColumns);
     return result || null;
   }
 
-  async updateUserTimezone(userId: number, timezone: string): Promise<User | null> {
+  async updateUserTimezone(userId: number, timezone: string): Promise<PublicUser | null> {
     const [result] = await db
       .update(users)
       .set({ timezone })
       .where(eq(users.id, userId))
-      .returning();
+      .returning(publicUserColumns);
     return result || null;
   }
 
-  async updateUserSeasonMode(userId: number, seasonMode: SeasonMode): Promise<User | null> {
+  async updateUserSeasonMode(userId: number, seasonMode: SeasonMode): Promise<PublicUser | null> {
     const [result] = await db
       .update(users)
       .set({ season_mode: seasonMode })
       .where(eq(users.id, userId))
-      .returning();
+      .returning(publicUserColumns);
     return result || null;
   }
 
@@ -154,21 +168,44 @@ export class DbStorage implements IStorage {
       .where(eq(users.id, userId));
   }
 
-  async getUserByRecoveryKey(recoveryKey: string): Promise<User | null> {
+  async getUserByCurrentOrPendingKeyHash(hash: string): Promise<RecoveryKeyHit | null> {
+    const [row] = await currentOrPendingHashQuery(db, hash);
+    if (!row) return null;
+    const { current, ...user } = row;
+    return { user, pending: !current };
+  }
+
+  async getUserByRecoveryKey(canonicalKey: string): Promise<PublicUser | null> {
     const [user] = await db
-      .select()
+      .select(publicUserColumns)
       .from(users)
-      .where(eq(users.recovery_key, recoveryKey));
+      .where(eq(users.recovery_key, canonicalKey));
     return user || null;
   }
 
-  async regenerateRecoveryKey(userId: number): Promise<User | null> {
-    const [result] = await db
-      .update(users)
-      .set({ recovery_key: crypto.randomUUID() })
-      .where(eq(users.id, userId))
-      .returning();
+  async setRecoveryKeyHash(userId: number, hash: string, canonicalKey: string): Promise<void> {
+    await repairKeyHashQuery(db, userId, hash, canonicalKey);
+  }
+
+  async setPendingRecoveryKey(userId: number, pendingHash: string): Promise<PublicUser | null> {
+    const [result] = await setPendingKeyQuery(db, userId, pendingHash);
     return result || null;
+  }
+
+  async commitPendingRecoveryKey(userId: number, recoveryKey: RecoveryKeyPair, keepSid: string): Promise<CommitResult> {
+    return await db.transaction(async (tx): Promise<CommitResult> => {
+      const [promoted] = await commitPendingKeyQuery(tx, userId, recoveryKey);
+      if (promoted) {
+        // The old key is dead, so are the sessions it opened elsewhere; the caller's own session stays.
+        await tx.execute(deleteOtherSessionsSql(userId, keepSid));
+        return { status: "committed", user: promoted };
+      }
+      // No row: a concurrent commit of the same key (READ COMMITTED: this statement sees it) or not pending.
+      const [row] = await userWithCurrentFlagQuery(tx, userId, recoveryKey.hash);
+      if (!row) return { status: "not_found" };
+      const { current, ...user } = row;
+      return current ? { status: "already_current", user } : { status: "not_pending" };
+    });
   }
 
   // Plant methods

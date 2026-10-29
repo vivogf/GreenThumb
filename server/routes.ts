@@ -12,11 +12,13 @@ import { createJournalHandlers } from "./journal/eventsRoute";
 import { createTimelineHandlers } from "./journal/photosRoute";
 import { createDiagnoseHandler } from "./diagnosis/route";
 import { createDiagnosisProvider } from "./diagnosis/provider";
+import { createStandaloneDiagnoseHandler } from "./diagnosis/standaloneRoute";
 import { createProgressHandler } from "./progress/route";
 import { addDaysToDateString } from "@shared/care/userDate";
 import { plantsDueForWatering, userToday } from "./care/schedule";
 import { indexReminderData, reminderEligible, reminderFor } from "./push/reminders";
 import { notifTitle, plantCountText } from "./push/text";
+import { configureVapid } from "./push/vapid";
 import { registerUserRoutes } from "./auth/userRoutes";
 import webpush from "web-push";
 import { Expo } from "expo-server-sdk";
@@ -53,14 +55,7 @@ function fcmMessaging(): Messaging | null {
   return fcmApp ? getMessaging(fcmApp) : null;
 }
 
-// Configure web-push with VAPID keys
-if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
-  webpush.setVapidDetails(
-    'mailto:greenthumb@example.com',
-    process.env.VAPID_PUBLIC_KEY,
-    process.env.VAPID_PRIVATE_KEY
-  );
-}
+configureVapid(process.env, (subject, publicKey, privateKey) => webpush.setVapidDetails(subject, publicKey, privateKey));
 
 // Resolve with `null` if `p` hasn't settled within `ms`. A rejection still
 // surfaces (Promise.allSettled swallows it) — the cap only trims a hung
@@ -252,6 +247,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const diagnosisProvider = createDiagnosisProvider(process.env);
   console.log(diagnosisProvider ? `AI diagnosis: ${diagnosisProvider.name} (${diagnosisProvider.model})` : "AI diagnosis: disabled");
   app.post("/api/plants/:id/diagnose", createDiagnoseHandler({ store: storage, provider: () => diagnosisProvider }));
+  // Plant-less diagnosis (smart camera): session, input, provider, shared daily limits; stores only the usage count.
+  app.post("/api/diagnose", createStandaloneDiagnoseHandler({ store: storage, provider: () => diagnosisProvider }));
 
   // Streak and achievements of the session user; newly met achievements are stored once and never re-locked.
   app.get("/api/progress", createProgressHandler({ store: storage }));

@@ -48,7 +48,7 @@ export function buildOpenAIRequest(model: string, input: DiagnosisRequest) {
     store: false,
     reasoning: { effort: "low" as const },
     max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
-    instructions: diagnosisInstructions(input.language),
+    instructions: diagnosisInstructions(input.language, input.subject ?? "own"),
     input: [
       {
         role: "user" as const,

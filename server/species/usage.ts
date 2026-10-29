@@ -32,6 +32,8 @@ export interface UsageStore {
 export interface UsageCounter {
   usageCount(day: string, userId: string, kind: ApiUsageKind): Promise<number>;
   recordUsage(day: string, userId: string, kind: ApiUsageKind): Promise<void>;
+  /** The day's count for the kind over all users, `__deleted__` included. */
+  usageTotal(day: string, kind: ApiUsageKind): Promise<number>;
 }
 
 function positiveInt(raw: string | undefined, fallback: number): number {
@@ -87,6 +89,10 @@ export class MemoryUsageStore implements UsageStore, UsageCounter {
 
   async usageCount(day: string, userId: string, kind: ApiUsageKind): Promise<number> {
     return this.count(day, userId, kind);
+  }
+
+  async usageTotal(day: string, kind: ApiUsageKind): Promise<number> {
+    return this.total(day, kind);
   }
 
   async recordUsage(day: string, userId: string, kind: ApiUsageKind): Promise<void> {

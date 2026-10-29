@@ -7,8 +7,11 @@ export type Likelihood = (typeof LIKELIHOODS)[number];
 export type DiagnosisCause = { title: string; likelihood: Likelihood; explanation: string; advice: string };
 export type DiagnosisResult = { causes: DiagnosisCause[]; summary: string };
 
-/** What a provider sends upstream: the photo as the request data URL, the plant context and the answer language. */
-export type DiagnosisRequest = { photoDataUrl: string; language: DiagnosisLanguage; context: string };
+/** "own": a plant from the user's collection; "unknown": a plant-less check (any plant, maybe outdoors). */
+export type DiagnosisSubject = "own" | "unknown";
+
+/** What a provider sends upstream: the photo as the request data URL, the context and the answer language. */
+export type DiagnosisRequest = { photoDataUrl: string; language: DiagnosisLanguage; context: string; subject?: DiagnosisSubject };
 
 /**
  * A diagnosis backend (architecture §2.10). `diagnose` resolves with the provider's parsed JSON output,

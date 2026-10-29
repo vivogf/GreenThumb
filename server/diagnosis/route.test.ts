@@ -59,6 +59,10 @@ const store: DiagnoseStore = {
     if (failUsage) throw new Error("db down");
     return usage.usageCount(day, userId, kind);
   },
+  async usageTotal(day, kind) {
+    if (failUsage) throw new Error("db down");
+    return usage.usageTotal(day, kind);
+  },
   async recordUsage(day, userId, kind) {
     return usage.recordUsage(day, userId, kind);
   },
@@ -257,7 +261,7 @@ test("daily limit: only 200s count, 429 daily_limit without a provider call, per
   const callsBefore = providerCalls.length;
   const limited = await post(PLANT_A, valid);
   assert.equal(limited.status, 429);
-  assert.deepEqual(limited.body, { error: "Daily diagnosis limit reached", code: "daily_limit" });
+  assert.deepEqual(limited.body, { error: "Daily diagnosis limit reached", code: "daily_limit", scope: "user" });
   assert.equal(providerCalls.length, callsBefore);
   assert.equal(count(A), 2);
   assert.equal((await post(PLANT_V, valid, V)).status, 200);

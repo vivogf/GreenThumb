@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CONTEXT_EVENT_LIMIT, buildDiagnosisContext, diagnosisInstructions, recentCareEvents } from "./prompt";
+import { CONTEXT_EVENT_LIMIT, buildDiagnosisContext, buildStandaloneContext, diagnosisInstructions, recentCareEvents } from "./prompt";
 
 const plant = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -80,5 +80,26 @@ test("instructions ask for the request language and forbid numeric likelihood", 
   for (const text of [en, ru]) {
     assert.match(text, /percentage/i);
     assert.match(text, /low, medium, high/);
+  }
+});
+
+test("standalone context holds only the quoted note and states that no plant data is known", () => {
+  const ctx = buildStandaloneContext({ note: "Пятна на листьях" });
+  assert.match(ctx, /"Пятна на листьях"/);
+  assert.match(ctx, /no information about this plant/i);
+  for (const forbidden of [/species/i, /interval/i, /water/i, /care event/i, /houseplant/i, /owner/i]) assert.doesNotMatch(ctx, forbidden);
+  const empty = buildStandaloneContext({ note: null });
+  assert.doesNotMatch(empty, /description of the problem/i);
+});
+
+test("instructions for an unknown plant do not assume a houseplant; own-plant instructions stay as before", () => {
+  for (const language of ["en", "ru"] as const) {
+    const unknown = diagnosisInstructions(language, "unknown");
+    assert.doesNotMatch(unknown, /houseplant/i);
+    assert.match(unknown, /outdoors|someone else/i);
+    assert.match(unknown, /percentage/i);
+    assert.match(unknown, /low, medium, high/);
+    assert.equal(diagnosisInstructions(language), diagnosisInstructions(language, "own"));
+    assert.match(diagnosisInstructions(language), /houseplant/);
   }
 });

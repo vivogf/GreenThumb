@@ -574,6 +574,14 @@ export class DbStorage implements IStorage {
     return Number(row?.count ?? 0);
   }
 
+  async usageTotal(day: string, kind: ApiUsageKind): Promise<number> {
+    const [row] = await db
+      .select({ total: sql<number>`coalesce(sum(${apiUsage.count}), 0)::int` })
+      .from(apiUsage)
+      .where(and(eq(apiUsage.day, day), eq(apiUsage.kind, kind)));
+    return Number(row?.total ?? 0);
+  }
+
   async recordUsage(day: string, userId: string, kind: ApiUsageKind): Promise<void> {
     await db
       .insert(apiUsage)

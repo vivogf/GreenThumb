@@ -3,16 +3,13 @@ import type { SeasonUser } from "@shared/season/forUser";
 import { PLANT_NOT_FOUND, requireOwnedPlant } from "../plants/ownership";
 import { utcDay, type UsageCounter } from "../species/usage";
 import { parseDiagnoseBody } from "./input";
+import { diagnosisLimitScope, diagnosisLimits } from "./limits";
 import { CONTEXT_EVENT_LIMIT, buildDiagnosisContext, type PromptEvent, type PromptPlant } from "./prompt";
-import { validateDiagnosisOutput } from "./result";
-import { DiagnosisUnavailableError, type DiagnosisProvider, type DiagnosisRequest } from "./types";
+import { DIAGNOSIS_DEADLINE_MS, DIAGNOSIS_UNAVAILABLE, limitReachedBody, errorLabel, respondWithDiagnosis } from "./run";
+import type { DiagnosisProvider } from "./types";
 
-export const DEFAULT_DIAGNOSIS_USER_DAILY_LIMIT = 10;
-/** One deadline across all retries (architecture §8.7). */
-export const DIAGNOSIS_DEADLINE_MS = 60_000;
-
-export const DIAGNOSIS_UNAVAILABLE = { error: "Diagnosis is temporarily unavailable", code: "diagnosis_unavailable" } as const;
-export const DAILY_LIMIT = { error: "Daily diagnosis limit reached", code: "daily_limit" } as const;
+export { DEFAULT_DIAGNOSIS_USER_DAILY_LIMIT } from "./limits";
+export { DAILY_LIMIT, DIAGNOSIS_DEADLINE_MS, DIAGNOSIS_UNAVAILABLE } from "./run";
 
 export interface DiagnoseStore extends UsageCounter {
   getPlantForUser(id: string, userId: number): Promise<PromptPlant | null>;
@@ -31,48 +28,13 @@ export interface DiagnoseDeps {
 }
 
 export function diagnosisUserDailyLimit(env: NodeJS.ProcessEnv): number {
-  const raw = env.DIAGNOSIS_USER_DAILY_LIMIT;
-  if (raw === undefined || raw.trim() === "") return DEFAULT_DIAGNOSIS_USER_DAILY_LIMIT;
-  const n = Number(raw);
-  return Number.isInteger(n) && n > 0 ? n : DEFAULT_DIAGNOSIS_USER_DAILY_LIMIT;
-}
-
-function errorLabel(error: unknown): string {
-  return error instanceof Error ? error.name : typeof error;
-}
-
-/**
- * Runs the provider under one AbortSignal that fires at the deadline or when the client goes away.
- * Rejects with DiagnosisUnavailableError("deadline") at the deadline even if the provider ignores the signal.
- */
-async function diagnoseWithDeadline(provider: DiagnosisProvider, request: DiagnosisRequest, ms: number, res: Response): Promise<unknown> {
-  const controller = new AbortController();
-  const onClose = () => {
-    if (!res.writableEnded) controller.abort();
-  };
-  res.on("close", onClose);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => {
-      controller.abort();
-      reject(new DiagnosisUnavailableError("deadline"));
-    }, ms);
-  });
-  const work = provider.diagnose(request, { signal: controller.signal });
-  // After the deadline wins, the provider's own rejection must not become an unhandled rejection.
-  work.catch(() => {});
-  try {
-    return await Promise.race([work, deadline]);
-  } finally {
-    clearTimeout(timer);
-    res.off("close", onClose);
-  }
+  return diagnosisLimits(env).userLimit;
 }
 
 /**
  * POST /api/plants/:id/diagnose (architecture §2.10, §8.7). Order: session (401), plant ownership (404),
- * body (400), provider configured (503), daily limit (429), provider call. Only a validated 200 counts
- * toward the per-user UTC-day limit. The photo and the key are never logged or stored.
+ * body (400), provider configured (503), daily limits (429, scope user|global), provider call. Only a validated
+ * 200 counts toward the UTC-day limits. The photo and the key are never logged or stored.
  */
 export function createDiagnoseHandler(deps: DiagnoseDeps) {
   const env = deps.env ?? (() => process.env);
@@ -114,9 +76,9 @@ export function createDiagnoseHandler(deps: DiagnoseDeps) {
     const usageUser = String(userId);
     let context: string;
     try {
-      const used = await deps.store.usageCount(day, usageUser, "diagnosis");
-      if (used >= diagnosisUserDailyLimit(env())) {
-        res.status(429).json(DAILY_LIMIT);
+      const scope = await diagnosisLimitScope(deps.store, day, usageUser, diagnosisLimits(env()));
+      if (scope) {
+        res.status(429).json(limitReachedBody(scope));
         return;
       }
       const [user, events] = await Promise.all([
@@ -130,34 +92,15 @@ export function createDiagnoseHandler(deps: DiagnoseDeps) {
       return;
     }
 
-    let raw: unknown;
-    const started = Date.now();
-    try {
-      raw = await diagnoseWithDeadline(
-        provider,
-        { photoDataUrl: parsed.data.photoDataUrl, language: parsed.data.language, context },
-        deadlineMs(),
-        res,
-      );
-    } catch (error) {
-      const reason = error instanceof DiagnosisUnavailableError
-        ? `${error.reason}${error.status ? ` ${error.status}` : ""}`
-        : `unexpected ${errorLabel(error)}`;
-      log(`diagnosis: provider unavailable (${reason}) after ${Date.now() - started} ms`);
-      if (!res.headersSent) res.status(503).json(DIAGNOSIS_UNAVAILABLE);
-      return;
-    }
-    const result = validateDiagnosisOutput(raw);
-    if (!result) {
-      log("diagnosis: provider output failed validation");
-      res.status(503).json(DIAGNOSIS_UNAVAILABLE);
-      return;
-    }
-    try {
-      await deps.store.recordUsage(day, usageUser, "diagnosis");
-    } catch (error) {
-      log(`diagnosis: usage record failed (${errorLabel(error)})`);
-    }
-    res.json(result);
+    await respondWithDiagnosis({
+      res,
+      provider,
+      request: { photoDataUrl: parsed.data.photoDataUrl, language: parsed.data.language, context, subject: "own" },
+      deadlineMs: deadlineMs(),
+      store: deps.store,
+      day,
+      usageUser,
+      log,
+    });
   };
 }

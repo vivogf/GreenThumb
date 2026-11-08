@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { pgTable, text, integer, timestamp, uuid, serial, date, primaryKey } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { pgTable, text, integer, timestamp, uuid, serial, date, primaryKey, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 
 // Users table - anonymous UUID-based authentication
@@ -51,14 +52,20 @@ export const plants = pgTable("plants", {
   // Offline catalog id and scientific name (migration 003). The server never validates them against a catalog.
   species_id: text("species_id"),
   species_name: text("species_name"),
+  // Idempotency-Key of the POST that created the row (migration 010); unique per user where set.
+  client_request_id: text("client_request_id"),
   created_at: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => [
+  uniqueIndex("plants_user_client_request_id_key")
+    .on(t.user_id, t.client_request_id)
+    .where(sql`${t.client_request_id} IS NOT NULL`),
+]);
 
 export type Plant = typeof plants.$inferSelect;
 
 // Schema for frontend form (without user_id - added by backend)
 export const insertPlantSchema = createInsertSchema(plants)
-  .omit({ id: true, created_at: true, user_id: true })
+  .omit({ id: true, created_at: true, user_id: true, client_request_id: true })
   .extend({
     last_watered_date: z.string(),
     notes: z.string().optional().default(""),

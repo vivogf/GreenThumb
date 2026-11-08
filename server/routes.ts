@@ -2,7 +2,8 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { PLANT_NOT_FOUND, isPlantId, requireOwnedPlant } from "./plants/ownership";
-import { parsePlantCreate, parsePlantPatch } from "./plants/plantInput";
+import { parsePlantPatch } from "./plants/plantInput";
+import { createPlantCreateHandler } from "./plants/createRoute";
 import { createPushCheckGate } from "./push/checkGate";
 import { getPhotoRuntime } from "./photos/store";
 import { keyForPhotoUrl } from "./photos/keys";
@@ -107,30 +108,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return { store: runtime?.store ?? null, publicBaseUrl: runtime?.publicBaseUrl ?? null };
   }
 
-  app.post("/api/plants", requireAuth, async (req: Request, res) => {
-    try {
-      const userId = req.session.userId!;
-      const parsed = parsePlantCreate(req.body, await userTimezone(userId));
-      if (!parsed.ok) {
-        return res.status(400).json({ error: parsed.error });
-      }
-      const photos = photoContext();
-      const change = await preparePhotoChange(parsed.data.photo_url, null, photos);
-      if (!change.ok) {
-        return res.status(change.status).json({ error: change.error });
-      }
-      let result;
-      try {
-        result = await storage.addPlant({ ...parsed.data, photo_url: change.photoUrl ?? "", user_id: String(userId) });
-      } catch (error) {
-        await removePhotoObjects(photos.store, [change.uploadedKey]);
-        throw error;
-      }
-      res.json(result);
-    } catch (error) {
-      plantRouteError(res, "Error adding plant", error);
-    }
-  });
+  app.post("/api/plants", requireAuth, createPlantCreateHandler({
+    store: storage,
+    userTimezone,
+    preparePhoto: (incoming) => preparePhotoChange(incoming, null, photoContext()),
+    removePhotos: (keys) => removePhotoObjects(photoContext().store, keys),
+    onError: plantRouteError,
+  }));
 
   app.get("/api/plants", requireAuth, async (req: Request, res) => {
     try {

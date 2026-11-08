@@ -2,7 +2,8 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { plants, users, apiUsage, careEvents, plantPhotos, userAchievements, pushSubscriptions, expoPushSubscriptions, fcmPushSubscriptions, type Plant, type PushSubscription, type InsertPushSubscription, type ExpoPushSubscription, type FcmPushSubscription } from "@shared/schema";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import type { PlantCreate, PlantPatch } from "./plants/plantInput";
+import type { PlantPatch } from "./plants/plantInput";
+import type { NewPlant, PlantCreateStore } from "./plants/createRoute";
 import { publicUserColumns, type PublicUser } from "./auth/publicUser";
 import { deleteOtherSessionsSql } from "./auth/sessions";
 import type { CommitResult, RecoveryKeyHit } from "./auth/loginRecovery";
@@ -15,7 +16,7 @@ import type { ProgressData, ProgressStore } from "./progress/route";
 import type { AchievementId, StoredAchievement } from "./progress/achievements";
 import { DELETED_USAGE_USER, type ApiUsageKind, type ReserveResult, type UsageCounter, type UsageReservation, type UsageStore } from "./species/usage";
 
-export type CronPlant = Omit<Plant, 'photo_url' | 'notes' | 'created_at' | 'species_id' | 'species_name'>;
+export type CronPlant = Omit<Plant, 'photo_url' | 'notes' | 'created_at' | 'species_id' | 'species_name' | 'client_request_id'>;
 
 // created_at as text with microseconds: a JS Date would drop them and make cursors skip rows.
 const careEventColumns = {
@@ -46,7 +47,7 @@ export type DeletedAccountPhotos = { photo_urls: string[]; object_keys: string[]
 const client = postgres(process.env.DATABASE_URL!);
 const db = drizzle(client);
 
-export interface IStorage extends UsageStore, UsageCounter, JournalStore, TimelineStore, ProgressStore {
+export interface IStorage extends UsageStore, UsageCounter, JournalStore, TimelineStore, ProgressStore, PlantCreateStore {
   // User methods. Every one selects and returns only publicUserColumns (server/auth/publicUser.ts),
   // and the key methods take hashes only (server/auth/keyQueries.ts).
   /** keyHash = generateRecoveryKey().hash; the key itself never reaches the database. */
@@ -65,7 +66,8 @@ export interface IStorage extends UsageStore, UsageCounter, JournalStore, Timeli
   commitPendingRecoveryKey(userId: number, hash: string, keepSid: string): Promise<CommitResult>;
   
   // Plant methods
-  addPlant(plant: PlantCreate & { user_id: string }): Promise<Plant>;
+  addPlant(plant: NewPlant): Promise<Plant>;
+  getPlantByClientRequestId(userId: number, key: string): Promise<Plant | null>;
   getPlantsByUserId(userId: string): Promise<Plant[]>;
   getPlantForUser(id: string, userId: number): Promise<Plant | null>;
   /** Also journals every care date the patch moves forward (one event per field), in one transaction. */
@@ -193,9 +195,17 @@ export class DbStorage implements IStorage {
   }
 
   // Plant methods
-  async addPlant(plant: PlantCreate & { user_id: string }): Promise<Plant> {
+  async addPlant(plant: NewPlant): Promise<Plant> {
     const [result] = await db.insert(plants).values(plant).returning();
     return result;
+  }
+
+  async getPlantByClientRequestId(userId: number, key: string): Promise<Plant | null> {
+    const [plant] = await db
+      .select()
+      .from(plants)
+      .where(and(eq(plants.user_id, String(userId)), eq(plants.client_request_id, key)));
+    return plant || null;
   }
 
   async getPlantsByUserId(userId: string): Promise<Plant[]> {

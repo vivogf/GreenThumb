@@ -1,8 +1,11 @@
 # Photos in R2: migration and orphan sweep
 
-Plant photos live in the private R2 bucket `greenthumb-photos` under `p/<uuid>.<ext>` and are served by
+Plant photos live in the private R2 bucket `<R2_PHOTO_BUCKET>` under `p/<uuid>.<ext>` and are served by
 `GET /photos/<uuid>.<ext>` (architecture §2.5). The database keeps only the https URL in `plants.photo_url`
 (`""` means no photo).
+
+Placeholders such as `<VPS_IP>`, `<OLD_VPS_IP>`, `<SSH_USER>`, `<R2_BACKUP_BUCKET>` and `<R2_PHOTO_BUCKET>` stand for
+values kept out of git in `~/.config/greenthumb/ops.env` (mode 600) on the operator's Mac.
 
 ## One-off migration of legacy base64 photos
 

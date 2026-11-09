@@ -3,6 +3,9 @@
 Moves `greenthumb.xmpp.site` from the old server `<OLD_VPS_IP>` (app on Neon) to the new VPS
 `<VPS_IP>` (app on local Postgres 17). Architecture §4.2 is the source of this plan.
 
+Placeholders such as `<VPS_IP>`, `<OLD_VPS_IP>`, `<SSH_USER>`, `<R2_BACKUP_BUCKET>` and `<R2_PHOTO_BUCKET>` stand for
+values kept out of git in `~/.config/greenthumb/ops.env` (mode 600) on the operator's Mac.
+
 ## Timeline
 
 | Event | UTC time | Who |
@@ -18,7 +21,7 @@ Moves `greenthumb.xmpp.site` from the old server `<OLD_VPS_IP>` (app on Neon) to
 
 Final sync record: Neon and the new DB both had users 66, plants 23, session 290 (288 not expired),
 expo_push_subscriptions 7, push_subscriptions 3, fcm_push_subscriptions 0; photo_url profile 15 `data:`,
-2 `http(s)`, 6 empty. The dump is `greenthumb-backups/pre-migration/neon-final-2026-10-26T16-40-42Z.dump`
+2 `http(s)`, 6 empty. The dump is `<R2_BACKUP_BUCKET>/pre-migration/neon-final-2026-10-26T16-40-42Z.dump`
 (2 552 443 bytes; local copy `/var/backups/greenthumb/neon-2026-10-26T16-40-42Z.dump`). After the swap,
 `migrate.mjs` re-recorded `001_baseline.sql` (a no-op on the Neon schema), taking its own pre-migration backup.
 
@@ -33,7 +36,7 @@ expo_push_subscriptions 7, push_subscriptions 3, fcm_push_subscriptions 0; photo
 - `.env` on the new VPS: `SESSION_SECRET PUSH_CHECK_API_KEY VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY
   VITE_VAPID_PUBLIC_KEY FIREBASE_SERVICE_ACCOUNT_JSON` equal to the old server (compared by sha256);
   `DATABASE_URL` points to the local Postgres.
-- The only GreenThumb cron line on the new VPS is the hourly backup (`17 * * * *`, R2 `greenthumb-backups`).
+- The only GreenThumb cron line on the new VPS is the hourly backup (`17 * * * *`, R2 `<R2_BACKUP_BUCKET>`).
   The old server still runs the hourly push cron.
 - Rehearsal: `scripts/ops/neon-sync.sh` dumped Neon to `/var/backups/greenthumb/neon-<ts>.dump` and restored it.
   Row counts were equal on both sides (users 66, plants 23, session 310, expo_push_subscriptions 7,

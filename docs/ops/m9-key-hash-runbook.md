@@ -2,6 +2,9 @@
 
 What ships, in one maintenance window (owner's decision 2026-10-29: effectively 0 real users, no multi-day soak):
 
+Placeholders such as `<VPS_IP>`, `<OLD_VPS_IP>`, `<SSH_USER>`, `<R2_BACKUP_BUCKET>` and `<R2_PHOTO_BUCKET>` stand for
+values kept out of git in `~/.config/greenthumb/ops.env` (mode 600) on the operator's Mac.
+
 - Migration `server/migrations/008_recovery_key_hash.sql` (stage 1, expand): `users.recovery_key_hash` (backfilled,
   NOT NULL, unique, CHECK), `users.pending_recovery_key_hash`, and a trigger that keeps the hash in sync with the
   plaintext column while the old build may still write it.

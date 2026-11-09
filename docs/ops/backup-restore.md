@@ -1,7 +1,10 @@
 # Backups and restore
 
-Database backups of the new VPS `<VPS_IP>` go to the private Cloudflare R2 bucket `greenthumb-backups`
+Database backups of the new VPS `<VPS_IP>` go to the private Cloudflare R2 bucket `<R2_BACKUP_BUCKET>`
 (EU jurisdiction). Architecture §2.3 and §2.6 are the source of this plan.
+
+Placeholders such as `<VPS_IP>`, `<OLD_VPS_IP>`, `<SSH_USER>`, `<R2_BACKUP_BUCKET>` and `<R2_PHOTO_BUCKET>` stand for
+values kept out of git in `~/.config/greenthumb/ops.env` (mode 600) on the operator's Mac.
 
 ## What runs
 

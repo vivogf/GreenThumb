@@ -6,10 +6,19 @@
 #                                     write REVISION, wait for /api/health to report the new revision
 #   bash scripts/deploy.sh --dry-run  print the plan (revision, target, file count) and change nothing
 #
-# Env overrides: DEPLOY_HOST (default <SSH_USER>@<VPS_IP>), DEPLOY_DOMAIN (default greenthumb.xmpp.site).
+# Target: DEPLOY_HOST (user@host) from the environment, else from ~/.config/greenthumb/ops.env
+# (path override: GREENTHUMB_OPS_ENV; the file stays out of git). DEPLOY_DOMAIN: greenthumb.xmpp.site.
 set -euo pipefail
 
-DEPLOY_HOST="${DEPLOY_HOST:-<SSH_USER>@<VPS_IP>}"
+OPS_ENV="${GREENTHUMB_OPS_ENV:-$HOME/.config/greenthumb/ops.env}"
+if [ -z "${DEPLOY_HOST:-}" ] && [ -r "$OPS_ENV" ]; then
+  DEPLOY_HOST="$(sed -n 's/^DEPLOY_HOST=//p' "$OPS_ENV" | tail -n 1 | tr -d "\"'[:space:]")"
+fi
+if [ -z "${DEPLOY_HOST:-}" ]; then
+  echo "deploy: DEPLOY_HOST is not set. Export DEPLOY_HOST=<user>@<host>, or put the line" >&2
+  echo "        DEPLOY_HOST=<user>@<host> into $OPS_ENV (chmod 600)." >&2
+  exit 2
+fi
 DEPLOY_DOMAIN="${DEPLOY_DOMAIN:-greenthumb.xmpp.site}"
 TARGET_DIR="/var/www/greenthumb"
 SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10)

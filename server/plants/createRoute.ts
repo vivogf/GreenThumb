@@ -82,6 +82,8 @@ export function createPlantCreateHandler(deps: PlantCreateDeps) {
         if (key !== null && isUniqueViolation(error)) {
           const winner = await deps.store.getPlantByClientRequestId(userId, key);
           if (winner) return res.json(winner);
+          // The winner was deleted in between: the key was used, but there is no plant to return.
+          return res.status(409).json({ error: "Plant for this Idempotency-Key was deleted" });
         }
         throw error;
       }

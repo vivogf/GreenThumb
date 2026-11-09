@@ -18,6 +18,7 @@ let rows: Plant[];
 let uploads: string[];
 let removed: string[];
 let raceOnInsert: boolean;
+let winnerDeletedAfterRace: boolean;
 
 function row(plant: Parameters<PlantCreateStore["addPlant"]>[0]): Plant {
   return {
@@ -48,6 +49,8 @@ const store: PlantCreateStore = {
       // A concurrent request with the same key committed first.
       raceOnInsert = false;
       rows.push(row({ ...plant, name: "first" }));
+      // The committed plant is deleted before this request reads it back.
+      if (winnerDeletedAfterRace) rows.pop();
       throw Object.assign(new Error("duplicate key value violates unique constraint"), { code: "23505" });
     }
     const key = plant.client_request_id ?? null;
@@ -107,6 +110,7 @@ beforeEach(() => {
   uploads = [];
   removed = [];
   raceOnInsert = false;
+  winnerDeletedAfterRace = false;
 });
 
 const body = (extra: Record<string, unknown> = {}) => ({
@@ -181,6 +185,16 @@ test("a concurrent duplicate insert returns the committed plant and removes its 
   assert.equal(res.status, 200);
   assert.equal(res.json.name, "first");
   assert.equal(rows.length, 1);
+  assert.deepEqual(removed, ["k1.jpg"]);
+});
+
+test("a duplicate insert whose committed plant is already deleted is 409, not 500, and leaves no plant", async () => {
+  raceOnInsert = true;
+  winnerDeletedAfterRace = true;
+  const res = await post(A, body({ photo_url: "data:image/jpeg;base64,AAAA" }), REQUEST_ID);
+  assert.equal(res.status, 409);
+  assert.equal(typeof res.json.error, "string");
+  assert.equal(rows.length, 0);
   assert.deepEqual(removed, ["k1.jpg"]);
 });
 

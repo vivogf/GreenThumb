@@ -37,6 +37,80 @@ export function inferCareEvents(old: CareDates, patch: CareDates): InferredEvent
   return events;
 }
 
+/** The plant column that holds the last date of each care type. */
+export const CARE_DATE_FIELDS = {
+  water: "last_watered_date",
+  fertilize: "last_fertilized_date",
+  repot: "last_repotted_date",
+  prune: "last_pruned_date",
+} as const;
+
+/**
+ * Types whose journal follows a date correction. Water is left out: Postpone moves last_watered_date
+ * back without being care, so a backward water date says nothing about past waterings.
+ */
+const CORRECTED_TYPES: ReadonlySet<CareEventType> = new Set<CareEventType>(["fertilize", "repot", "prune"]);
+
+export type JournalEvent = { id: string; type: CareEventType; occurred_on: string };
+export type JournalPlan = {
+  insert: InferredEvent[];
+  remove: string[];
+  move: { id: string; occurred_on: string }[];
+};
+
+/** True when a patch can change the fertilize/repot/prune journal beyond adding an event. */
+export function needsJournalCorrection(patch: CareDates): boolean {
+  return (["last_fertilized_date", "last_repotted_date", "last_pruned_date"] as const).some((f) => f in patch);
+}
+
+/**
+ * Journal changes for a plant update. Forward moves add an event (inferCareEvents). For
+ * fertilize/repot/prune a backward move to D is a correction: events after D go, except that the newest
+ * one moves to D when no event is on D yet. A cleared date removes every event of the type.
+ */
+export function planCareJournal(old: CareDates, patch: CareDates, existing: JournalEvent[]): JournalPlan {
+  const plan: JournalPlan = { insert: inferCareEvents(old, patch), remove: [], move: [] };
+  for (const field of Object.keys(CARE_DATE_EVENT_TYPES) as CareDateField[]) {
+    if (!(field in patch)) continue;
+    const type = CARE_DATE_EVENT_TYPES[field];
+    if (!CORRECTED_TYPES.has(type)) continue;
+    const prev = typeof old[field] === "string" ? (old[field] as string).slice(0, 10) : null;
+    const next = patch[field];
+    if (prev === null) continue;
+    const ofType = existing.filter((e) => e.type === type);
+    if (next === null || next === undefined) {
+      plan.remove.push(...ofType.map((e) => e.id));
+      continue;
+    }
+    if (next >= prev) continue;
+    const later = ofType.filter((e) => e.occurred_on > next).sort((a, b) => (a.occurred_on < b.occurred_on ? 1 : -1));
+    if (later.length === 0) continue;
+    if (ofType.some((e) => e.occurred_on === next)) {
+      plan.remove.push(...later.map((e) => e.id));
+    } else {
+      plan.move.push({ id: later[0].id, occurred_on: next });
+      plan.remove.push(...later.slice(1).map((e) => e.id));
+    }
+  }
+  return plan;
+}
+
+/**
+ * The plant's last date after a care event is deleted: undefined = leave it. Only an event that holds
+ * the current fertilize/repot/prune date moves it, to the newest remaining event of the type or null.
+ * Water keeps its date (it is required and Postpone moves it without events).
+ */
+export function lastDateAfterDelete(
+  type: CareEventType,
+  deletedOn: string,
+  currentDate: string | null,
+  remaining: string[],
+): string | null | undefined {
+  if (!CORRECTED_TYPES.has(type)) return undefined;
+  if (currentDate === null || currentDate.slice(0, 10) !== deletedOn) return undefined;
+  return remaining.reduce<string | null>((max, d) => (max === null || d > max ? d : max), null);
+}
+
 export type ParseResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
 /** Validates a POST /events body. Only notes are creatable; automatic types come from care actions. */

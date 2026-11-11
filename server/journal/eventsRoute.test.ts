@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import express from "express";
 import { jsonBodyParser } from "../http";
 import { createJournalHandlers, type CareEventRow, type JournalStore } from "./eventsRoute";
-import type { CursorKey } from "./careEvents";
+import { CARE_DATE_FIELDS, lastDateAfterDelete, type CursorKey } from "./careEvents";
 
 const A = 1;
 const B = 2;
@@ -16,6 +16,7 @@ const PLANT_B = randomUUID();
 const owners = new Map([[PLANT_A, A], [PLANT_A2, A], [PLANT_B, B]]);
 
 let rows: CareEventRow[];
+const dates = new Map<string, Record<string, string | null>>();
 let tick: number;
 
 function keyOf(r: CareEventRow): CursorKey {
@@ -43,12 +44,18 @@ const store: JournalStore = {
     const row = seed(plantId, userId, "note", occurredOn, note);
     return row;
   },
-  async deleteNoteEvent(plantId, userId, eventId) {
+  async deleteEvent(plantId, userId, eventId) {
     const row = rows.find((r) => r.id === eventId && r.plant_id === plantId && r.user_id === String(userId));
-    if (!row) return "missing";
-    if (row.type !== "note") return "not_note";
+    if (!row) return { status: "missing" };
+    if (row.type === "photo") return { status: "photo" };
     rows = rows.filter((r) => r !== row);
-    return "deleted";
+    if (row.type === "note") return { status: "deleted", plant: null };
+    const plant = { id: plantId, ...(dates.get(plantId) ?? {}) } as Record<string, string | null>;
+    const field = CARE_DATE_FIELDS[row.type];
+    const remaining = rows.filter((r) => r.plant_id === plantId && r.type === row.type).map((r) => r.occurred_on);
+    const next = lastDateAfterDelete(row.type, row.occurred_on, plant[field] ?? null, remaining);
+    if (next !== undefined) plant[field] = next;
+    return { status: "deleted", plant };
   },
 };
 
@@ -93,6 +100,7 @@ after(() => server.close());
 
 beforeEach(() => {
   rows = [];
+  dates.clear();
   tick = 0;
   tz = null;
 });
@@ -182,17 +190,31 @@ test("invalid notes and automatic types are rejected without changes", async () 
   assert.equal(rows.length, 0);
 });
 
-test("only note events can be deleted; delete gives 204 with no body", async () => {
+test("note and care entries can be deleted; a note gives 204, a care entry 200 with the plant", async () => {
   const note = seed(PLANT_A, A, "note", "2026-10-01", "n");
   const water = seed(PLANT_A, A, "water", "2026-10-01");
+  const older = seed(PLANT_A, A, "fertilize", "2026-10-01");
+  const tap = seed(PLANT_A, A, "fertilize", "2026-11-11");
+  dates.set(PLANT_A, { last_watered_date: "2026-10-01", last_fertilized_date: "2026-11-11" });
   const del = await call("DELETE", `/api/plants/${PLANT_A}/events/${note.id}`, A);
   assert.equal(del.status, 204);
   assert.equal(del.text, "");
-  const conflict = await call("DELETE", `/api/plants/${PLANT_A}/events/${water.id}`, A);
-  assert.equal(conflict.status, 409);
-  assert.deepEqual(rows.map((r) => r.id), [water.id]);
+  const care = await call("DELETE", `/api/plants/${PLANT_A}/events/${tap.id}`, A);
+  assert.equal(care.status, 200);
+  assert.equal(care.json.id, PLANT_A);
+  assert.equal(care.json.last_fertilized_date, "2026-10-01");
+  const watered = await call("DELETE", `/api/plants/${PLANT_A}/events/${water.id}`, A);
+  assert.equal(watered.status, 200);
+  assert.equal(watered.json.last_watered_date, "2026-10-01");
+  assert.deepEqual(rows.map((r) => r.id), [older.id]);
 });
 
+test("a photo entry is deleted with its photo, not through the journal", async () => {
+  const photo = seed(PLANT_A, A, "photo", "2026-10-01");
+  const r = await call("DELETE", `/api/plants/${PLANT_A}/events/${photo.id}`, A);
+  assert.equal(r.status, 409);
+  assert.deepEqual(rows.map((x) => x.id), [photo.id]);
+});
 test("ownership: foreign plant, foreign event and mismatched plant all give 404", async () => {
   const aEvent = seed(PLANT_A, A, "note", "2026-10-01", "secret");
   const aOther = seed(PLANT_A2, A, "note", "2026-10-01", "other");

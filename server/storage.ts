@@ -9,8 +9,8 @@ import { deleteOtherSessionsSql } from "./auth/sessions";
 import type { CommitResult, RecoveryKeyHit } from "./auth/loginRecovery";
 import { commitPendingKeyQuery, currentOrPendingHashQuery, insertUserQuery, pinKeyHashQuery, setPendingKeyQuery, userWithCurrentFlagQuery } from "./auth/keyQueries";
 import type { SeasonMode } from "@shared/season/rule";
-import { inferCareEvents, type CursorKey } from "./journal/careEvents";
-import type { CareEventRow, DeleteNoteResult, JournalStore } from "./journal/eventsRoute";
+import { CARE_DATE_FIELDS, inferCareEvents, lastDateAfterDelete, needsJournalCorrection, planCareJournal, type CursorKey, type JournalEvent } from "./journal/careEvents";
+import type { CareEventRow, DeleteEventResult, JournalStore } from "./journal/eventsRoute";
 import type { NewTimelinePhoto, TimelinePhotoRow, TimelineStore } from "./journal/photosRoute";
 import type { ProgressData, ProgressStore } from "./progress/route";
 import type { AchievementId, StoredAchievement } from "./progress/achievements";
@@ -246,10 +246,22 @@ export class DbStorage implements IStorage {
         .where(and(eq(plants.id, id), eq(plants.user_id, String(userId))))
         .returning();
       if (!result) return null;
-      const events = inferCareEvents(old, patch);
-      if (events.length > 0) {
+      const existing: JournalEvent[] = needsJournalCorrection(patch)
+        ? await tx
+            .select({ id: careEvents.id, type: careEvents.type, occurred_on: careEvents.occurred_on })
+            .from(careEvents)
+            .where(and(eq(careEvents.plant_id, id), inArray(careEvents.type, ["fertilize", "repot", "prune"])))
+        : [];
+      const plan = planCareJournal(old, patch, existing);
+      if (plan.remove.length > 0) {
+        await tx.delete(careEvents).where(and(eq(careEvents.plant_id, id), inArray(careEvents.id, plan.remove)));
+      }
+      for (const m of plan.move) {
+        await tx.update(careEvents).set({ occurred_on: m.occurred_on }).where(and(eq(careEvents.plant_id, id), eq(careEvents.id, m.id)));
+      }
+      if (plan.insert.length > 0) {
         await tx.insert(careEvents).values(
-          events.map((e) => ({ plant_id: id, user_id: String(userId), type: e.type, occurred_on: e.occurred_on })),
+          plan.insert.map((e) => ({ plant_id: id, user_id: String(userId), type: e.type, occurred_on: e.occurred_on })),
         );
       }
       return result;
@@ -322,19 +334,36 @@ export class DbStorage implements IStorage {
     return row;
   }
 
-  async deleteNoteEvent(plantId: string, userId: number, eventId: string): Promise<DeleteNoteResult> {
-    const match = and(
-      eq(careEvents.id, eventId),
-      eq(careEvents.plant_id, plantId),
-      eq(careEvents.user_id, String(userId)),
-    );
-    const [deleted] = await db
-      .delete(careEvents)
-      .where(and(match, eq(careEvents.type, "note")))
-      .returning({ id: careEvents.id });
-    if (deleted) return "deleted";
-    const [existing] = await db.select({ id: careEvents.id }).from(careEvents).where(match);
-    return existing ? "not_note" : "missing";
+  async deleteEvent(plantId: string, userId: number, eventId: string): Promise<DeleteEventResult> {
+    const uid = String(userId);
+    return await db.transaction(async (tx) => {
+      // Plant row first, like updatePlantForUser, so a concurrent PATCH and this delete see each other.
+      const [plant] = await tx
+        .select()
+        .from(plants)
+        .where(and(eq(plants.id, plantId), eq(plants.user_id, uid)))
+        .for("update");
+      if (!plant) return { status: "missing" } as const;
+      const match = and(eq(careEvents.id, eventId), eq(careEvents.plant_id, plantId), eq(careEvents.user_id, uid));
+      const [event] = await tx.select({ type: careEvents.type, occurred_on: careEvents.occurred_on }).from(careEvents).where(match);
+      if (!event) return { status: "missing" } as const;
+      if (event.type === "photo") return { status: "photo" } as const;
+      await tx.delete(careEvents).where(match);
+      if (event.type === "note") return { status: "deleted", plant: null } as const;
+      const field = CARE_DATE_FIELDS[event.type];
+      const remaining = await tx
+        .select({ occurred_on: careEvents.occurred_on })
+        .from(careEvents)
+        .where(and(eq(careEvents.plant_id, plantId), eq(careEvents.type, event.type)));
+      const next = lastDateAfterDelete(event.type, event.occurred_on, plant[field] ?? null, remaining.map((r) => r.occurred_on));
+      if (next === undefined) return { status: "deleted", plant } as const;
+      const [updated] = await tx
+        .update(plants)
+        .set({ [field]: next })
+        .where(and(eq(plants.id, plantId), eq(plants.user_id, uid)))
+        .returning();
+      return { status: "deleted", plant: updated } as const;
+    });
   }
 
   // TimelineStore: callers check plant ownership first; every query still carries the ids it relies on.

@@ -17,15 +17,22 @@ export type CareEventRow = {
   created_at: string;
 };
 
-export type DeleteNoteResult = "deleted" | "not_note" | "missing";
+/** plant: the updated plant row for a care entry (its last date may have moved), null for a note. */
+export type DeleteEventResult =
+  | { status: "deleted"; plant: object | null }
+  | { status: "photo" }
+  | { status: "missing" };
 
 export interface JournalStore {
   getPlantForUser(id: string, userId: number): Promise<{ id: string } | null>;
   /** Newest first, strictly after `before` in that order. */
   listEvents(plantId: string, limit: number, before: CursorKey | null): Promise<CareEventRow[]>;
   insertNote(plantId: string, userId: number, note: string, occurredOn: string): Promise<CareEventRow>;
-  /** Matches the event by id, plant and user together. */
-  deleteNoteEvent(plantId: string, userId: number, eventId: string): Promise<DeleteNoteResult>;
+  /**
+   * Matches the event by id, plant and user together. Deleting a care entry recomputes the plant's last
+   * date (lastDateAfterDelete) in the same transaction; photo entries go only with their photo.
+   */
+  deleteEvent(plantId: string, userId: number, eventId: string): Promise<DeleteEventResult>;
 }
 
 export type JournalDeps = {
@@ -92,12 +99,14 @@ export function createJournalHandlers(deps: JournalDeps) {
       if (!owned) return;
       const eventId = req.params.eventId;
       if (!isEventId(eventId)) return res.status(404).json(EVENT_NOT_FOUND);
-      const result = await deps.store.deleteNoteEvent(owned.plantId, owned.userId, eventId.toLowerCase());
-      if (result === "missing") return res.status(404).json(EVENT_NOT_FOUND);
-      if (result === "not_note") {
-        return res.status(409).json({ error: "Only note events can be deleted" });
+      const result = await deps.store.deleteEvent(owned.plantId, owned.userId, eventId.toLowerCase());
+      if (result.status === "missing") return res.status(404).json(EVENT_NOT_FOUND);
+      if (result.status === "photo") {
+        return res.status(409).json({ error: "Photo entries are deleted with their photo" });
       }
-      res.status(204).end();
+      // Clients before 0.8.2 delete only notes and expect 204; a care entry returns the plant it changed.
+      if (result.plant === null) return res.status(204).end();
+      res.json(result.plant);
     } catch (error) {
       serverError(res, "Error deleting care event", error);
     }

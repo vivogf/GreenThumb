@@ -1,11 +1,12 @@
 import type { Request, Response } from "express";
 import { parseIdentifyBody } from "./identifyInput";
 import { identifyWithPlantNet, type IdentifyOutcome, type PlantNetOptions } from "./plantnet";
-import { plantNetLimits, remainingAfter, utcDay, type UsageStore } from "./usage";
+import { plantNetLimits, remainingAfter, utcDay, type UsageCounter, type UsageStore } from "./usage";
 import type { IdentifyImage, IdentifyLang } from "./identifyInput";
 
 export interface IdentifyDeps {
-  store: UsageStore;
+  /** reserve/release plus the reads that report what is left after a refund. */
+  store: UsageStore & Pick<UsageCounter, "usageCount" | "usageTotal">;
   apiKey?: () => string | undefined;
   identify?: (images: IdentifyImage[], lang: IdentifyLang, opts: PlantNetOptions) => Promise<IdentifyOutcome>;
   fetch?: typeof fetch;
@@ -57,6 +58,25 @@ export function createIdentifyHandler(deps: IdentifyDeps) {
       res.status(429).json(QUOTA_EXCEEDED);
       return;
     }
+    const ref = { day, userId: String(userId), kind: "identify" as const };
+    /**
+     * Gives the reservation back: the call produced no recognition (no match, upstream quota, upstream failure).
+     * Returns what is left for today, read from the counter after the refund — if the refund failed the
+     * reservation stays charged, and promising a check the database still counts would be a lie.
+     */
+    const refund = async (): Promise<number> => {
+      try {
+        await deps.store.release(ref);
+        const [userCount, globalCount] = await Promise.all([
+          deps.store.usageCount(day, ref.userId, "identify"),
+          deps.store.usageTotal(day, "identify"),
+        ]);
+        return remainingAfter({ userCount, globalCount }, limits);
+      } catch (err: any) {
+        log(`species identify: release failed (${err?.name ?? "Error"})`);
+        return remainingAfter(reservation, limits);
+      }
+    };
     const outcome = await identify(parsed.data.images, parsed.data.lang, {
       apiKey: key,
       fetch: deps.fetch,
@@ -67,18 +87,7 @@ export function createIdentifyHandler(deps: IdentifyDeps) {
         if (outcome.results.length === 0) {
           // Pl@ntNet found no plant: a verdict about the photo, not a recognition. The reservation goes back,
           // so a photo of a wall does not spend one of the user's 20 identifications.
-          try {
-            await deps.store.release({ day, userId: String(userId), kind: "identify" });
-          } catch (err: any) {
-            log(`species identify: release failed (${err?.name ?? "Error"})`);
-          }
-          res.json({
-            results: [],
-            remainingToday: remainingAfter(
-              { userCount: reservation.userCount - 1, globalCount: reservation.globalCount - 1 },
-              limits,
-            ),
-          });
+          res.json({ results: [], remainingToday: await refund() });
           return;
         }
         res.json({ results: outcome.results, remainingToday: remainingAfter(reservation, limits) });
@@ -86,10 +95,12 @@ export function createIdentifyHandler(deps: IdentifyDeps) {
       }
       case "quota":
         log("species identify: upstream quota exhausted (429)");
+        await refund();
         res.status(429).json(QUOTA_EXCEEDED);
         return;
       case "unavailable":
         log(`species identify: upstream unavailable (${outcome.reason})`);
+        await refund();
         res.status(503).json(IDENTIFY_UNAVAILABLE);
         return;
     }

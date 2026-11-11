@@ -60,9 +60,3 @@ export function readDiagnosisOutput(raw: unknown): DiagnosisReading {
   if (texts.some(statesNumericProbability)) return { kind: "invalid" };
   return { kind: "ok", result };
 }
-
-/** The result to show, or null when the answer is either "no plant" or broken. */
-export function validateDiagnosisOutput(raw: unknown): DiagnosisResult | null {
-  const reading = readDiagnosisOutput(raw);
-  return reading.kind === "ok" ? reading.result : null;
-}

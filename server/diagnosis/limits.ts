@@ -23,6 +23,13 @@ export function diagnosisLimits(env: NodeJS.ProcessEnv): DiagnosisLimits {
 const KIND: ApiUsageKind = "diagnosis";
 
 /**
+ * Every paid provider call of the day, over all users. A call that answers «no plant» or a refusal costs the
+ * same as a shown result, and such answers are common (a leaf photo of a healthy plant), so the global cap has to
+ * read attempts; the per-user cap keeps counting results only.
+ */
+export const DIAGNOSIS_ATTEMPT_KIND: ApiUsageKind = "diagnosis_attempt";
+
+/**
  * Which limit blocks the next diagnosis, or null. Check-before-call, record-after-success: concurrent in-flight
  * requests can overshoot by a few, which is accepted, because the reserve() lock would make a failed provider call
  * use up quota. Both diagnosis routes share these counters.
@@ -33,8 +40,11 @@ export async function diagnosisLimitScope(
   userId: string,
   limits: DiagnosisLimits,
 ): Promise<DiagnosisLimitScope | null> {
-  const [used, total] = await Promise.all([store.usageCount(day, userId, KIND), store.usageTotal(day, KIND)]);
+  const [used, attempts] = await Promise.all([
+    store.usageCount(day, userId, KIND),
+    store.usageTotal(day, DIAGNOSIS_ATTEMPT_KIND),
+  ]);
   if (used >= limits.userLimit) return "user";
-  if (total >= limits.globalLimit) return "global";
+  if (attempts >= limits.globalLimit) return "global";
   return null;
 }

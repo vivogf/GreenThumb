@@ -141,6 +141,8 @@ async function post(plantId: string, body: unknown, user: number | null = A) {
 const valid = { photo: PHOTO, note: "Leaves turn yellow from the bottom", language: "en" };
 const day = () => utcDay(clock);
 const count = (user: number) => usage.count(day(), String(user), "diagnosis");
+/** Paid provider calls of the day, over all users: what the global spend cap reads. */
+const attempts = () => usage.total(day(), "diagnosis_attempt");
 
 test("returns the validated result, sends context and the request data URL, and counts usage", async () => {
   const r = await post(PLANT_A, valid);
@@ -232,26 +234,30 @@ test("output validation: 4 causes are cut to 3; invalid output and provider fail
   assert.equal(count(A), before);
 });
 
-test("a photo without a plant answers 422 no_plant, not 503, and costs no daily check", async () => {
+test("a photo without a plant answers 422 no_plant, costs no daily check, and counts as a paid attempt", async () => {
   const before = count(A);
+  const paid = attempts();
   const empty = { causes: [], summary: "No plant is visible in the photo." };
   behavior = async () => empty;
   const r = await post(PLANT_A, valid);
   assert.equal(r.status, 422);
   assert.deepEqual(r.body, { error: "No plant or disease signs recognised", code: "no_plant" });
-  assert.equal(count(A), before);
+  assert.equal(count(A), before, "the user's own limit is untouched");
+  assert.equal(attempts(), paid + 1, "the provider was paid: the spend cap sees it");
 
-  // The model declining to analyse the photo is the same verdict: another photo, not a retry of this one.
+  // The provider declining to analyse the photo is not a verdict about it: retry later, and the call was paid.
   behavior = async () => { throw new DiagnosisNotApplicableError("refusal"); };
   const refused = await post(PLANT_A, valid);
-  assert.equal(refused.status, 422);
-  assert.equal(refused.body.code, "no_plant");
+  assert.equal(refused.status, 503);
+  assert.deepEqual(refused.body, { error: "Diagnosis is temporarily unavailable", code: "diagnosis_unavailable" });
   assert.equal(count(A), before);
+  assert.equal(attempts(), paid + 2);
 
   // An empty causes list with an unreadable summary is still a broken answer, not a verdict.
   behavior = async () => ({ causes: [], summary: "  " });
   assert.equal((await post(PLANT_A, valid)).status, 503);
   assert.equal(count(A), before);
+  assert.equal(attempts(), paid + 3, "a billed answer that failed validation still costs money");
 });
 
 test("a disabled provider gives 503 with no provider call and no usage", async () => {

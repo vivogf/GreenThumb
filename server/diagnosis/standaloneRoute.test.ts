@@ -124,6 +124,8 @@ const plantRoute = (body: unknown, user: number | null = U) => call(`/api/plants
 const valid = { photo: PHOTO, note: "Пятна на листьях", language: "ru" };
 const day = () => utcDay(clock);
 const count = (user: number | string) => usage.count(day(), String(user), "diagnosis");
+/** Paid provider calls of the day, over all users: what the global spend cap reads. */
+const attempts = () => usage.total(day(), "diagnosis_attempt");
 
 test("POST /api/diagnose: 200 with exactly causes and summary, one usage, neutral context without plant data", async () => {
   const r = await standalone(valid);
@@ -216,17 +218,20 @@ test("POST /api/diagnose: provider failure and invalid output give 503 and recor
   assert.equal(providerCalls.length, before);
 });
 
-test("POST /api/diagnose: a photo without a plant gives 422 no_plant and costs no daily check", async () => {
+test("POST /api/diagnose: a photo without a plant gives 422 no_plant, costs no daily check, and counts as a paid attempt", async () => {
   behavior = async () => ({ causes: [], summary: "We couldn't see a plant in this photo." });
   const r = await standalone(valid);
   assert.equal(r.status, 422);
   assert.deepEqual(r.body, { error: "No plant or disease signs recognised", code: "no_plant" });
   assert.equal(count(U), 0);
+  assert.equal(attempts(), 1);
+  // A refusal is the provider's answer, not a verdict about the photo: the client retries later.
   behavior = async () => { throw new DiagnosisNotApplicableError("refusal"); };
   const refused = await standalone(valid);
-  assert.equal(refused.status, 422);
-  assert.equal(refused.body.code, "no_plant");
+  assert.equal(refused.status, 503);
+  assert.deepEqual(refused.body, { error: "Diagnosis is temporarily unavailable", code: "diagnosis_unavailable" });
   assert.equal(count(U), 0);
+  assert.equal(attempts(), 2);
 });
 
 test("per-user limit 10 is shared: 6 plant + 4 standalone, the 11th on either route is 429 scope user", async () => {
@@ -247,22 +252,37 @@ test("per-user limit 10 is shared: 6 plant + 4 standalone, the 11th on either ro
   assert.equal((await plantRoute(valid)).status, 200);
 });
 
-test("global cap DIAGNOSIS_DAILY_LIMIT: total over all users incl. __deleted__ gives 429 scope global on both routes", async () => {
+test("global cap DIAGNOSIS_DAILY_LIMIT counts paid attempts over all users incl. __deleted__: 429 scope global on both routes", async () => {
   env = { DIAGNOSIS_DAILY_LIMIT: "3" };
-  await usage.recordUsage(day(), DELETED_USAGE_USER, "diagnosis");
+  // A deleted account's attempts still count: the provider was paid for them.
+  await usage.recordUsage(day(), DELETED_USAGE_USER, "diagnosis_attempt");
   assert.equal((await standalone(valid, V)).status, 200);
   assert.equal((await plantRoute(valid)).status, 200);
-  assert.equal(usage.total(day(), "diagnosis"), 3);
+  assert.equal(attempts(), 3);
   const calls = providerCalls.length;
   for (const r of [await standalone(valid), await plantRoute(valid), await standalone(valid, 99)]) {
     assert.equal(r.status, 429);
     assert.deepEqual(r.body, { error: "Daily diagnosis limit reached", code: "daily_limit", scope: "global" });
   }
-  assert.equal(providerCalls.length, calls);
-  assert.equal(usage.total(day(), "diagnosis"), 3);
+  assert.equal(providerCalls.length, calls, "no provider call behind a 429");
+  assert.equal(attempts(), 3);
   clock = new Date("2026-10-30T00:00:01Z");
   assert.equal((await standalone(valid)).status, 200);
   assert.equal((await plantRoute(valid)).status, 200);
+});
+
+test("a no_plant photo spends the day's attempt budget without touching the user's own count", async () => {
+  env = { DIAGNOSIS_DAILY_LIMIT: "2", DIAGNOSIS_USER_DAILY_LIMIT: "10" };
+  behavior = async () => ({ causes: [], summary: "No plant is visible in the photo." });
+  assert.equal((await standalone(valid)).status, 422);
+  assert.equal((await plantRoute(valid)).status, 422);
+  assert.equal(count(U), 0, "nothing was shown, so the user's own limit is untouched");
+  const calls = providerCalls.length;
+  // The provider would be paid again: the global cap stops it.
+  const third = await standalone(valid);
+  assert.equal(third.status, 429);
+  assert.deepEqual(third.body, { error: "Daily diagnosis limit reached", code: "daily_limit", scope: "global" });
+  assert.equal(providerCalls.length, calls);
 });
 
 test("the user scope wins when both limits are reached", async () => {

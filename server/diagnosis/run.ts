@@ -1,6 +1,6 @@
 import type { Response } from "express";
 import type { UsageCounter } from "../species/usage";
-import type { DiagnosisLimitScope } from "./limits";
+import { DIAGNOSIS_ATTEMPT_KIND, type DiagnosisLimitScope } from "./limits";
 import { readDiagnosisOutput } from "./result";
 import { DiagnosisNotApplicableError, DiagnosisUnavailableError, type DiagnosisProvider, type DiagnosisRequest } from "./types";
 
@@ -12,7 +12,7 @@ export const DAILY_LIMIT = { error: "Daily diagnosis limit reached", code: "dail
 
 /**
  * 422 for a photo with no plant (or nothing to diagnose) in it. Not an outage: the client asks for another
- * photo, and the attempt is not counted against the daily limit because only a shown result is recorded.
+ * photo, and the attempt is not counted against the user's daily limit because only a shown result is recorded.
  */
 export const DIAGNOSIS_NOT_A_PLANT = { error: "No plant or disease signs recognised", code: "no_plant" } as const;
 
@@ -52,7 +52,26 @@ async function diagnoseWithDeadline(provider: DiagnosisProvider, request: Diagno
   }
 }
 
-/** Provider call → output validation → usage record (only after a validated result) → 200 with causes and summary. */
+/**
+ * Counts one paid provider call against the day's global cap. Every call costs money whatever it answered, so an
+ * attempt is recorded for «no plant» and for a refusal too; only a shown result also counts toward the user's own
+ * limit. A failed record is logged, never raised: the answer to the user does not depend on the counter.
+ */
+async function countAttempt(
+  input: { store: Pick<UsageCounter, "recordUsage">; day: string; usageUser: string },
+  log: (line: string) => void,
+): Promise<void> {
+  try {
+    await input.store.recordUsage(input.day, input.usageUser, DIAGNOSIS_ATTEMPT_KIND);
+  } catch (error) {
+    log(`diagnosis: attempt record failed (${errorLabel(error)})`);
+  }
+}
+
+/**
+ * Provider call → output validation → attempt (every paid call) and usage (only after a validated result) → 200
+ * with causes and summary.
+ */
 export async function respondWithDiagnosis(input: {
   res: Response;
   provider: DiagnosisProvider;
@@ -69,10 +88,13 @@ export async function respondWithDiagnosis(input: {
   try {
     raw = await diagnoseWithDeadline(input.provider, input.request, input.deadlineMs, res);
   } catch (error) {
-    // The provider declining the photo is a verdict about the photo, not an outage (a leg, an object, a wall).
+    // The provider declining to analyse the photo is not a verdict about it: a refusal can come from the photo's
+    // content (a person in the frame) or from the provider itself, so the client is told to try later, not to
+    // take another photo. A photo with no plant is answered by the model itself (an empty causes list, below).
     if (error instanceof DiagnosisNotApplicableError) {
-      log(`diagnosis: not applicable (${error.reason}) after ${Date.now() - started} ms`);
-      if (!res.headersSent) res.status(422).json(DIAGNOSIS_NOT_A_PLANT);
+      log(`diagnosis: provider declined (${error.reason}) after ${Date.now() - started} ms`);
+      await countAttempt(input, log);
+      if (!res.headersSent) res.status(503).json(DIAGNOSIS_UNAVAILABLE);
       return;
     }
     const reason = error instanceof DiagnosisUnavailableError
@@ -83,6 +105,9 @@ export async function respondWithDiagnosis(input: {
     return;
   }
   const reading = readDiagnosisOutput(raw);
+  // A provider answer is a billable call whatever it says, so it is counted here, before the answer is classified;
+  // only a shown result also counts toward the user's own limit below.
+  await countAttempt(input, log);
   if (reading.kind !== "ok") {
     if (reading.kind === "no_plant") {
       log("diagnosis: the photo shows no plant (empty causes)");

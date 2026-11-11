@@ -2,7 +2,11 @@ export const DEFAULT_PLANTNET_DAILY_LIMIT = 450;
 export const DEFAULT_PLANTNET_USER_DAILY_LIMIT = 20;
 export const DELETED_USAGE_USER = "__deleted__";
 
-export type ApiUsageKind = "identify" | "diagnosis";
+/**
+ * Counter kinds. `identify` and `diagnosis` count results the user was shown; `diagnosis_attempt` counts every
+ * paid diagnosis provider call, whatever it answered, and is what the day's global spend cap reads.
+ */
+export type ApiUsageKind = "identify" | "diagnosis" | "diagnosis_attempt";
 
 export interface UsageReservation {
   day: string;

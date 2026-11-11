@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readDiagnosisOutput, validateDiagnosisOutput } from "./result";
+import { readDiagnosisOutput } from "./result";
+
+/** The result the route would show, or null — the same shape a 200 carries. */
+const shown = (raw: unknown) => {
+  const reading = readDiagnosisOutput(raw);
+  return reading.kind === "ok" ? reading.result : null;
+};
 
 const cause = (n: number, likelihood: unknown = "medium") => ({
   title: `Cause ${n}`,
@@ -11,13 +17,13 @@ const cause = (n: number, likelihood: unknown = "medium") => ({
 
 test("passes a valid 1-cause and 3-cause result through", () => {
   const one = { causes: [cause(1, "high")], summary: "Overwatering is likely." };
-  assert.deepEqual(validateDiagnosisOutput(one), one);
+  assert.deepEqual(shown(one), one);
   const three = { causes: [cause(1, "high"), cause(2), cause(3, "low")], summary: "S" };
-  assert.deepEqual(validateDiagnosisOutput(three), three);
+  assert.deepEqual(shown(three), three);
 });
 
 test("keeps the first 3 of 4 causes in provider order", () => {
-  const out = validateDiagnosisOutput({ causes: [cause(1), cause(2), cause(3), cause(4)], summary: "S" });
+  const out = shown({ causes: [cause(1), cause(2), cause(3), cause(4)], summary: "S" });
   assert.deepEqual(out?.causes.map((c) => c.title), ["Cause 1", "Cause 2", "Cause 3"]);
 });
 
@@ -34,11 +40,11 @@ test("rejects 0 causes, unknown likelihood, missing advice, blank text and non-o
     ["string", "not json"],
     ["null", null],
   ];
-  for (const [name, raw] of bad) assert.equal(validateDiagnosisOutput(raw), null, name);
+  for (const [name, raw] of bad) assert.equal(shown(raw), null, name);
 });
 
 test("strips extra numeric fields so no number reaches the client", () => {
-  const out = validateDiagnosisOutput({ causes: [{ ...cause(1), confidence: 0.8 }], summary: "S", score: 3 });
+  const out = shown({ causes: [{ ...cause(1), confidence: 0.8 }], summary: "S", score: 3 });
   assert.ok(out);
   assert.deepEqual(Object.keys(out), ["causes", "summary"]);
   assert.deepEqual(Object.keys(out.causes[0]), ["title", "likelihood", "explanation", "advice"]);
@@ -48,15 +54,15 @@ test("strips extra numeric fields so no number reaches the client", () => {
 
 test("keeps a percentage inside advice text unchanged", () => {
   const raw = { causes: [{ ...cause(1), advice: "Reduce watering by 20% for a month." }], summary: "S" };
-  assert.equal(validateDiagnosisOutput(raw)?.causes[0].advice, "Reduce watering by 20% for a month.");
+  assert.equal(shown(raw)?.causes[0].advice, "Reduce watering by 20% for a month.");
 });
 
 test("rejects text that states a probability or confidence as a number", () => {
   for (const text of ["70% likely", "This is 70 % likely.", "вероятность 60%", "confidence 0.8", "Probability: 45%", "шанс около 30 %"]) {
     const raw = { causes: [{ ...cause(1), explanation: text }], summary: "S" };
-    assert.equal(validateDiagnosisOutput(raw), null, text);
+    assert.equal(shown(raw), null, text);
   }
-  assert.equal(validateDiagnosisOutput({ causes: [cause(1)], summary: "Root rot is 80% probable." }), null);
+  assert.equal(shown({ causes: [cause(1)], summary: "Root rot is 80% probable." }), null);
 });
 
 // A photo without a plant (or without any visible disease) is not a service failure: the model says so with an
@@ -72,7 +78,7 @@ test("no_plant needs a readable summary: a blank or missing one is invalid outpu
   }
 });
 
-test("a valid result reads as ok with the same payload validateDiagnosisOutput returns", () => {
+test("a valid result reads as ok with the same payload shown() returns", () => {
   const raw = { causes: [cause(1, "high")], summary: "Overwatering is likely." };
   assert.deepEqual(readDiagnosisOutput(raw), { kind: "ok", result: raw });
 });

@@ -214,11 +214,13 @@ test("global limit defaults to 450 (counts from __deleted__ included)", async ()
   assert.equal(r.status, 429);
 });
 
-test("provider 429 maps to 429 quota_exceeded below local caps", async () => {
+test("provider 429 maps to 429 quota_exceeded below local caps and costs the user nothing", async () => {
   upstream = async () => new Response("Too Many Requests", { status: 429, headers: { "retry-after": "Tue, 28 Oct 2026 00:00:00 GMT" } });
   const r = await post({ photos: [jpegUrl()] });
   assert.equal(r.status, 429);
   assert.equal(r.body.code, "quota_exceeded");
+  // Pl@ntNet's own quota is not this user's recognition: the reservation goes back.
+  assert.equal(store.count(clock.toISOString().slice(0, 10), "1", "identify"), 0);
 });
 
 test("upstream failures settle as 503 identify_unavailable", async () => {
@@ -239,6 +241,8 @@ test("upstream failures settle as 503 identify_unavailable", async () => {
     assert.equal(typeof r.body.error, "string", name);
     assert.ok(r.body.error.length < 80, name);
   }
+  // Not one of the failures was a recognition: none of them spends the user's daily check.
+  assert.equal(store.rows.size, 0);
 });
 
 test("missing API key → 503 without upstream call or quota use", async () => {

@@ -94,9 +94,11 @@ export function createIdentifyHandler(deps: IdentifyDeps) {
         return;
       }
       case "quota":
+        // Pl@ntNet's own daily quota, not this user's: the reservation went back, so answering 429 «Daily
+        // identification limit reached» would contradict the account's real state.
         log("species identify: upstream quota exhausted (429)");
         await refund();
-        res.status(429).json(QUOTA_EXCEEDED);
+        res.status(503).json(IDENTIFY_UNAVAILABLE);
         return;
       case "unavailable":
         log(`species identify: upstream unavailable (${outcome.reason})`);

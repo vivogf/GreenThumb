@@ -30,9 +30,10 @@ const KIND: ApiUsageKind = "diagnosis";
 export const DIAGNOSIS_ATTEMPT_KIND: ApiUsageKind = "diagnosis_attempt";
 
 /**
- * Which limit blocks the next diagnosis, or null. Check-before-call, record-after-success: concurrent in-flight
- * requests can overshoot by a few, which is accepted, because the reserve() lock would make a failed provider call
- * use up quota. Both diagnosis routes share these counters.
+ * Which limit blocks the next diagnosis, or null. Check-before-call, record-right-before-the-call: a parallel
+ * burst all passes the check before any of it records, so the day's total can overshoot by the size of the burst.
+ * Closing that would need a reservation like identify's, which costs a lock on every request; the caps stay a
+ * spend guard, not an exact budget. Both diagnosis routes share these counters.
  */
 export async function diagnosisLimitScope(
   store: Pick<UsageCounter, "usageCount" | "usageTotal">,

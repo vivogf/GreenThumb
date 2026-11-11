@@ -214,13 +214,41 @@ test("global limit defaults to 450 (counts from __deleted__ included)", async ()
   assert.equal(r.status, 429);
 });
 
-test("provider 429 maps to 429 quota_exceeded below local caps and costs the user nothing", async () => {
+test("provider 429 is a service outage, not the user's limit, and costs the user nothing", async () => {
   upstream = async () => new Response("Too Many Requests", { status: 429, headers: { "retry-after": "Tue, 28 Oct 2026 00:00:00 GMT" } });
   const r = await post({ photos: [jpegUrl()] });
-  assert.equal(r.status, 429);
-  assert.equal(r.body.code, "quota_exceeded");
-  // Pl@ntNet's own quota is not this user's recognition: the reservation goes back.
+  // Pl@ntNet's own quota is not this user's recognition: the reservation goes back, so answering «daily limit
+  // reached» would contradict the account state the app shows.
+  assert.equal(r.status, 503);
+  assert.equal(r.body.code, "identify_unavailable");
   assert.equal(store.count(clock.toISOString().slice(0, 10), "1", "identify"), 0);
+});
+
+test("a failing refund keeps the reservation charged and reports what is left without it", async () => {
+  const failing = Object.create(store) as MemoryUsageStore;
+  let refundCalls = 0;
+  failing.release = async () => {
+    refundCalls++;
+    throw new Error("db down");
+  };
+  const app = express();
+  app.use(jsonBodyParser);
+  app.use((req, _res, next) => { (req as any).session = { userId: 1 }; next(); });
+  app.post("/x", createIdentifyHandler({ store: failing, apiKey: () => "test-key", fetch: fakeFetch, env: () => env, now: () => clock }));
+  upstream = async () => new Response(JSON.stringify({ statusCode: 404, error: "Not Found" }), { status: 404 });
+  const s = await new Promise<Server>((resolve) => { const v = app.listen(0, "127.0.0.1", () => resolve(v)); });
+  try {
+    const res = await fetch(`http://127.0.0.1:${(s.address() as AddressInfo).port}/x`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ photos: [jpegUrl()] }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    // The refund failed, so the check stays spent: 19 left, not 20.
+    assert.equal(body.remainingToday, 19);
+    assert.equal(refundCalls, 1);
+  } finally {
+    await new Promise<void>((resolve) => s.close(() => resolve()));
+  }
 });
 
 test("upstream failures settle as 503 identify_unavailable", async () => {

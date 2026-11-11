@@ -330,6 +330,7 @@ test("the overall deadline is 60 s and aborts a provider that never answers", as
   assert.ok(Date.now() - started < 2000);
   assert.equal(aborted, true);
   assert.equal(count(A), 0);
+  assert.equal(attempts(), 1, "a call that died at the deadline still cost the provider's time");
 });
 
 // Real OpenAI adapter behind the route with a fake transport.

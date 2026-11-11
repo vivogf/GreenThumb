@@ -53,9 +53,13 @@ async function diagnoseWithDeadline(provider: DiagnosisProvider, request: Diagno
 }
 
 /**
- * Counts one paid provider call against the day's global cap. Every call costs money whatever it answered, so an
- * attempt is recorded for «no plant» and for a refusal too; only a shown result also counts toward the user's own
- * limit. A failed record is logged, never raised: the answer to the user does not depend on the counter.
+ * Counts one paid provider call against the day's global cap. It runs before the provider is entered, so every
+ * call counts — a «no plant» answer, a refusal, a malformed answer, and a call that dies at the deadline or when
+ * the client hangs up, all of which are billed. Only a shown result also counts toward the user's own limit, so a
+ * user is never charged for a call that showed nothing.
+ *
+ * A failed write is logged and the call proceeds: the same database serves the limit checks, so a store that
+ * cannot write here has already failed the check that let the call through.
  */
 async function countAttempt(
   input: { store: Pick<UsageCounter, "recordUsage">; day: string; usageUser: string },
@@ -69,8 +73,8 @@ async function countAttempt(
 }
 
 /**
- * Provider call → output validation → attempt (every paid call) and usage (only after a validated result) → 200
- * with causes and summary.
+ * Attempt (every call is paid from the moment the provider is entered) → provider call → output validation →
+ * usage (only after a validated result) → 200 with causes and summary.
  */
 export async function respondWithDiagnosis(input: {
   res: Response;
@@ -85,6 +89,8 @@ export async function respondWithDiagnosis(input: {
   const { res, log } = input;
   let raw: unknown;
   const started = Date.now();
+  // Before the call: from here on the provider is paid whatever happens to the answer or the connection.
+  await countAttempt(input, log);
   try {
     raw = await diagnoseWithDeadline(input.provider, input.request, input.deadlineMs, res);
   } catch (error) {
@@ -93,7 +99,6 @@ export async function respondWithDiagnosis(input: {
     // take another photo. A photo with no plant is answered by the model itself (an empty causes list, below).
     if (error instanceof DiagnosisNotApplicableError) {
       log(`diagnosis: provider declined (${error.reason}) after ${Date.now() - started} ms`);
-      await countAttempt(input, log);
       if (!res.headersSent) res.status(503).json(DIAGNOSIS_UNAVAILABLE);
       return;
     }
@@ -105,9 +110,6 @@ export async function respondWithDiagnosis(input: {
     return;
   }
   const reading = readDiagnosisOutput(raw);
-  // A provider answer is a billable call whatever it says, so it is counted here, before the answer is classified;
-  // only a shown result also counts toward the user's own limit below.
-  await countAttempt(input, log);
   if (reading.kind !== "ok") {
     if (reading.kind === "no_plant") {
       log("diagnosis: the photo shows no plant (empty causes)");

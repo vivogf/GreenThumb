@@ -8,7 +8,7 @@ import {
   createOpenAIDiagnosisProvider,
 } from "./openai";
 import { createDiagnosisProvider } from "./provider";
-import { DiagnosisUnavailableError } from "./types";
+import { DiagnosisNotApplicableError, DiagnosisUnavailableError } from "./types";
 
 const SENTINEL = "changeme-openai-sentinel-91c2";
 const PHOTO = "data:image/jpeg;base64," + Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 5, 6]).toString("base64");
@@ -156,12 +156,16 @@ test("auth errors and connection errors map to failures", async () => {
   assert.equal(await failure(run()), "network");
 });
 
-test("refusal, incomplete and non-JSON outputs are failures", async () => {
+test("refusal is a verdict about the photo, incomplete and non-JSON outputs are failures", async () => {
   reply = async () => new Response(JSON.stringify({
     id: "r", object: "response", status: "completed",
     output: [{ type: "message", id: "m", role: "assistant", status: "completed", content: [{ type: "refusal", refusal: "I can't help with that." }] }],
   }), { status: 200, headers: { "content-type": "application/json" } });
-  assert.equal(await failure(run()), "refusal");
+  await assert.rejects(run(), (error: unknown) => {
+    assert.ok(error instanceof DiagnosisNotApplicableError, `expected not-applicable, got ${String(error)}`);
+    assert.equal(error.reason, "refusal");
+    return true;
+  });
   reply = async () => okResponse(JSON.stringify(RESULT).slice(0, 20), { status: "incomplete", incomplete_details: { reason: "max_output_tokens" } });
   assert.equal(await failure(run()), "incomplete");
   reply = async () => okResponse("not json at all");

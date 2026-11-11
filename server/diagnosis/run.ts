@@ -1,14 +1,20 @@
 import type { Response } from "express";
 import type { UsageCounter } from "../species/usage";
 import type { DiagnosisLimitScope } from "./limits";
-import { validateDiagnosisOutput } from "./result";
-import { DiagnosisUnavailableError, type DiagnosisProvider, type DiagnosisRequest } from "./types";
+import { readDiagnosisOutput } from "./result";
+import { DiagnosisNotApplicableError, DiagnosisUnavailableError, type DiagnosisProvider, type DiagnosisRequest } from "./types";
 
 /** One deadline across all retries (architecture §8.7). */
 export const DIAGNOSIS_DEADLINE_MS = 60_000;
 
 export const DIAGNOSIS_UNAVAILABLE = { error: "Diagnosis is temporarily unavailable", code: "diagnosis_unavailable" } as const;
 export const DAILY_LIMIT = { error: "Daily diagnosis limit reached", code: "daily_limit" } as const;
+
+/**
+ * 422 for a photo with no plant (or nothing to diagnose) in it. Not an outage: the client asks for another
+ * photo, and the attempt is not counted against the daily limit because only a shown result is recorded.
+ */
+export const DIAGNOSIS_NOT_A_PLANT = { error: "No plant or disease signs recognised", code: "no_plant" } as const;
 
 export function limitReachedBody(scope: DiagnosisLimitScope) {
   return { ...DAILY_LIMIT, scope };
@@ -63,6 +69,12 @@ export async function respondWithDiagnosis(input: {
   try {
     raw = await diagnoseWithDeadline(input.provider, input.request, input.deadlineMs, res);
   } catch (error) {
+    // The provider declining the photo is a verdict about the photo, not an outage (a leg, an object, a wall).
+    if (error instanceof DiagnosisNotApplicableError) {
+      log(`diagnosis: not applicable (${error.reason}) after ${Date.now() - started} ms`);
+      if (!res.headersSent) res.status(422).json(DIAGNOSIS_NOT_A_PLANT);
+      return;
+    }
     const reason = error instanceof DiagnosisUnavailableError
       ? `${error.reason}${error.status ? ` ${error.status}` : ""}`
       : `unexpected ${errorLabel(error)}`;
@@ -70,8 +82,13 @@ export async function respondWithDiagnosis(input: {
     if (!res.headersSent) res.status(503).json(DIAGNOSIS_UNAVAILABLE);
     return;
   }
-  const result = validateDiagnosisOutput(raw);
-  if (!result) {
+  const reading = readDiagnosisOutput(raw);
+  if (reading.kind !== "ok") {
+    if (reading.kind === "no_plant") {
+      log("diagnosis: the photo shows no plant (empty causes)");
+      res.status(422).json(DIAGNOSIS_NOT_A_PLANT);
+      return;
+    }
     log("diagnosis: provider output failed validation");
     res.status(503).json(DIAGNOSIS_UNAVAILABLE);
     return;
@@ -81,5 +98,5 @@ export async function respondWithDiagnosis(input: {
   } catch (error) {
     log(`diagnosis: usage record failed (${errorLabel(error)})`);
   }
-  res.json(result);
+  res.json(reading.result);
 }

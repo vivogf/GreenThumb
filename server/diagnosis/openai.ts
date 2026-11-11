@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { diagnosisInstructions } from "./prompt";
-import { DiagnosisUnavailableError, LIKELIHOODS, type DiagnosisProvider, type DiagnosisRequest } from "./types";
+import { DiagnosisNotApplicableError, DiagnosisUnavailableError, LIKELIHOODS, type DiagnosisProvider, type DiagnosisRequest } from "./types";
 
 export const DEFAULT_DIAGNOSIS_MODEL = "gpt-6-luna";
 export const OPENAI_MAX_RETRIES = 2;
@@ -140,7 +140,7 @@ export class OpenAIDiagnosisProvider implements DiagnosisProvider {
         else if (part?.type === "output_text" && typeof part.text === "string") text += part.text;
       }
     }
-    if (refused) throw new DiagnosisUnavailableError("refusal");
+    if (refused) throw new DiagnosisNotApplicableError("refusal");
     try {
       return JSON.parse(text);
     } catch {

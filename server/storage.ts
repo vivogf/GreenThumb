@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { plants, users, apiUsage, careEvents, plantPhotos, userAchievements, pushSubscriptions, expoPushSubscriptions, fcmPushSubscriptions, type Plant, type PushSubscription, type InsertPushSubscription, type ExpoPushSubscription, type FcmPushSubscription } from "@shared/schema";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import type { PlantPatch } from "./plants/plantInput";
 import type { NewPlant, PlantCreateStore } from "./plants/createRoute";
 import { publicUserColumns, type PublicUser } from "./auth/publicUser";
@@ -14,7 +14,7 @@ import type { CareEventRow, DeleteEventResult, JournalStore } from "./journal/ev
 import type { NewTimelinePhoto, TimelinePhotoRow, TimelineStore } from "./journal/photosRoute";
 import type { ProgressData, ProgressStore } from "./progress/route";
 import type { AchievementId, StoredAchievement } from "./progress/achievements";
-import { DELETED_USAGE_USER, type ApiUsageKind, type ReserveResult, type UsageCounter, type UsageReservation, type UsageStore } from "./species/usage";
+import { DELETED_USAGE_USER, type ApiUsageKind, type ReserveResult, type UsageCounter, type UsageRef, type UsageReservation, type UsageStore } from "./species/usage";
 
 export type CronPlant = Omit<Plant, 'photo_url' | 'notes' | 'created_at' | 'species_id' | 'species_name' | 'client_request_id'>;
 
@@ -602,6 +602,33 @@ export class DbStorage implements IStorage {
           set: { count: sql`${apiUsage.count} + 1` },
         });
       return { ok: true, userCount: userCount + 1, globalCount: globalCount + 1 };
+    });
+  }
+
+  /**
+   * Gives one reservation back (an identification that recognised no plant). Same advisory lock as
+   * `reserve`, so a release cannot race a reservation of the same day and kind.
+   */
+  async release(input: UsageRef): Promise<void> {
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`api_usage:${input.day}:${input.kind}`}::text))`);
+      await tx
+        .update(apiUsage)
+        .set({ count: sql`${apiUsage.count} - 1` })
+        .where(and(
+          eq(apiUsage.day, input.day),
+          eq(apiUsage.user_id, input.userId),
+          eq(apiUsage.kind, input.kind),
+          gt(apiUsage.count, 0),
+        ));
+      await tx
+        .delete(apiUsage)
+        .where(and(
+          eq(apiUsage.day, input.day),
+          eq(apiUsage.user_id, input.userId),
+          eq(apiUsage.kind, input.kind),
+          eq(apiUsage.count, 0),
+        ));
     });
   }
 

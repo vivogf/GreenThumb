@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validateDiagnosisOutput } from "./result";
+import { readDiagnosisOutput, validateDiagnosisOutput } from "./result";
 
 const cause = (n: number, likelihood: unknown = "medium") => ({
   title: `Cause ${n}`,
@@ -57,4 +57,33 @@ test("rejects text that states a probability or confidence as a number", () => {
     assert.equal(validateDiagnosisOutput(raw), null, text);
   }
   assert.equal(validateDiagnosisOutput({ causes: [cause(1)], summary: "Root rot is 80% probable." }), null);
+});
+
+// A photo without a plant (or without any visible disease) is not a service failure: the model says so with an
+// empty causes list, and the route answers «not a plant», which is not retryable and costs no daily check.
+test("an empty causes list with a summary reads as no_plant, not as invalid output", () => {
+  assert.deepEqual(readDiagnosisOutput({ causes: [], summary: "No plant is visible in the photo." }), { kind: "no_plant" });
+  assert.deepEqual(readDiagnosisOutput({ causes: [], summary: "На фото нет растения." }), { kind: "no_plant" });
+});
+
+test("no_plant needs a readable summary: a blank or missing one is invalid output, not a verdict", () => {
+  for (const raw of [{ causes: [], summary: "   " }, { causes: [] }, { summary: "No plant." }, null, "not json"]) {
+    assert.deepEqual(readDiagnosisOutput(raw), { kind: "invalid" }, JSON.stringify(raw));
+  }
+});
+
+test("a valid result reads as ok with the same payload validateDiagnosisOutput returns", () => {
+  const raw = { causes: [cause(1, "high")], summary: "Overwatering is likely." };
+  assert.deepEqual(readDiagnosisOutput(raw), { kind: "ok", result: raw });
+});
+
+test("broken causes and numeric likelihoods stay invalid, never no_plant", () => {
+  const { advice: _a, ...noAdvice } = cause(1);
+  for (const raw of [
+    { causes: [noAdvice], summary: "S" },
+    { causes: [cause(1, "very high")], summary: "S" },
+    { causes: [{ ...cause(1), explanation: "70% likely" }], summary: "S" },
+  ]) {
+    assert.deepEqual(readDiagnosisOutput(raw), { kind: "invalid" }, JSON.stringify(raw));
+  }
 });

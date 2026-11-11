@@ -9,7 +9,7 @@ import { MemoryUsageStore, utcDay } from "../species/usage";
 import { DEFAULT_DIAGNOSIS_USER_DAILY_LIMIT, DIAGNOSIS_DEADLINE_MS, createDiagnoseHandler, diagnosisUserDailyLimit, type DiagnoseStore } from "./route";
 import { createOpenAIDiagnosisProvider } from "./openai";
 import { createDiagnosisProvider } from "./provider";
-import { DiagnosisUnavailableError, type DiagnosisProvider, type DiagnosisRequest } from "./types";
+import { DiagnosisNotApplicableError, DiagnosisUnavailableError, type DiagnosisProvider, type DiagnosisRequest } from "./types";
 
 const SENTINEL = "changeme-openai-sentinel-route-55aa";
 const A = 1;
@@ -217,10 +217,8 @@ test("output validation: 4 causes are cut to 3; invalid output and provider fail
 
   const before = count(A);
   const failing: Array<[string, () => Promise<unknown>]> = [
-    ["0 causes", async () => ({ causes: [], summary: "S" })],
     ["very high", async () => ({ causes: [cause(1, "very high")], summary: "S" })],
     ["missing advice", async () => ({ causes: [{ title: "T", likelihood: "low", explanation: "E" }], summary: "S" })],
-    ["refusal", async () => { throw new DiagnosisUnavailableError("refusal"); }],
     ["incomplete", async () => { throw new DiagnosisUnavailableError("incomplete"); }],
     ["non-JSON", async () => { throw new DiagnosisUnavailableError("invalid_output"); }],
     ["unexpected throw", async () => { throw new Error(`boom ${SENTINEL}`); }],
@@ -231,6 +229,28 @@ test("output validation: 4 causes are cut to 3; invalid output and provider fail
     assert.equal(r.status, 503, name);
     assert.deepEqual(r.body, { error: "Diagnosis is temporarily unavailable", code: "diagnosis_unavailable" }, name);
   }
+  assert.equal(count(A), before);
+});
+
+test("a photo without a plant answers 422 no_plant, not 503, and costs no daily check", async () => {
+  const before = count(A);
+  const empty = { causes: [], summary: "No plant is visible in the photo." };
+  behavior = async () => empty;
+  const r = await post(PLANT_A, valid);
+  assert.equal(r.status, 422);
+  assert.deepEqual(r.body, { error: "No plant or disease signs recognised", code: "no_plant" });
+  assert.equal(count(A), before);
+
+  // The model declining to analyse the photo is the same verdict: another photo, not a retry of this one.
+  behavior = async () => { throw new DiagnosisNotApplicableError("refusal"); };
+  const refused = await post(PLANT_A, valid);
+  assert.equal(refused.status, 422);
+  assert.equal(refused.body.code, "no_plant");
+  assert.equal(count(A), before);
+
+  // An empty causes list with an unreadable summary is still a broken answer, not a verdict.
+  behavior = async () => ({ causes: [], summary: "  " });
+  assert.equal((await post(PLANT_A, valid)).status, 503);
   assert.equal(count(A), before);
 });
 

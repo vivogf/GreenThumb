@@ -18,6 +18,21 @@ test("remainingToday is the smaller of the user and global headroom", () => {
   assert.equal(remainingAfter({ userCount: 1, globalCount: 449 }, { userLimit: 20, globalLimit: 450 }), 1);
 });
 
+test("release gives back a reservation, removes the empty row and never goes below zero", async () => {
+  const store = new MemoryUsageStore();
+  const base = { day: "2026-10-27", kind: "identify" as const, userLimit: 20, globalLimit: 450 };
+  await store.reserve({ ...base, userId: "7" });
+  await store.reserve({ ...base, userId: "7" });
+  await store.release({ day: base.day, userId: "7", kind: base.kind });
+  assert.equal(store.count("2026-10-27", "7", "identify"), 1);
+  await store.release({ day: base.day, userId: "7", kind: base.kind });
+  assert.equal(store.count("2026-10-27", "7", "identify"), 0);
+  assert.equal(store.rows.size, 0);
+  await store.release({ day: base.day, userId: "7", kind: base.kind });
+  assert.equal(store.count("2026-10-27", "7", "identify"), 0);
+  assert.equal(store.total("2026-10-27", "identify"), 0);
+});
+
 test("folding a user keeps the day total and empties the user's rows", async () => {
   const store = new MemoryUsageStore();
   const base = { day: "2026-10-27", kind: "identify" as const, userLimit: 20, globalLimit: 450 };

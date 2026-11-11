@@ -34,3 +34,15 @@ export class DiagnosisUnavailableError extends Error {
     this.name = "DiagnosisUnavailableError";
   }
 }
+
+/**
+ * The provider looked and had nothing to diagnose: it declined to analyse the photo (a body part, an
+ * object) or answered that no plant is visible. The service works; another photo is what helps. Every
+ * other provider failure, including a broken answer, stays [DiagnosisUnavailableError] (→ 503).
+ */
+export class DiagnosisNotApplicableError extends Error {
+  constructor(readonly reason: string) {
+    super(`diagnosis not applicable: ${reason}`);
+    this.name = "DiagnosisNotApplicableError";
+  }
+}

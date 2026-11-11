@@ -83,6 +83,16 @@ test("instructions ask for the request language and forbid numeric likelihood", 
   }
 });
 
+test("instructions let the model answer with an empty causes list when there is nothing to diagnose", () => {
+  for (const subject of ["own", "unknown"] as const) {
+    const text = diagnosisInstructions("en", subject);
+    assert.match(text, /empty causes list/i);
+    assert.match(text, /does not show a plant/i);
+    assert.match(text, /daylight/i);
+    assert.match(text, /do not guess/i);
+  }
+});
+
 test("standalone context holds only the quoted note and states that no plant data is known", () => {
   const ctx = buildStandaloneContext({ note: "Пятна на листьях" });
   assert.match(ctx, /"Пятна на листьях"/);

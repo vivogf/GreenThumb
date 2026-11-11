@@ -14,7 +14,7 @@ const causeSchema = z.object({
 });
 
 const resultSchema = z.object({
-  causes: z.array(z.unknown()).min(1),
+  causes: z.array(z.unknown()),
   summary: text,
 });
 
@@ -31,20 +31,38 @@ function statesNumericProbability(value: string): boolean {
 }
 
 /**
- * Validates provider output (architecture §8.7): more than 3 causes keep the first 3 in provider order;
- * 0 causes, an unknown likelihood, a missing/blank field or a numeric probability give null (→ 503).
+ * What a provider answer means: a result to show, a verdict that there is no plant (or nothing to diagnose)
+ * in the photo, or a broken answer. `no_plant` needs a readable summary — an empty list with a blank or
+ * missing summary, or any broken cause, stays `invalid` (→ 503).
  */
-export function validateDiagnosisOutput(raw: unknown): DiagnosisResult | null {
+export type DiagnosisReading =
+  | { kind: "ok"; result: DiagnosisResult }
+  | { kind: "no_plant" }
+  | { kind: "invalid" };
+
+/**
+ * Validates provider output (architecture §8.7): more than 3 causes keep the first 3 in provider order;
+ * an empty causes list with a summary is the model's "no plant visible" verdict; an unknown likelihood,
+ * a missing/blank field or a numeric probability give `invalid`.
+ */
+export function readDiagnosisOutput(raw: unknown): DiagnosisReading {
   const top = resultSchema.safeParse(raw);
-  if (!top.success) return null;
+  if (!top.success) return { kind: "invalid" };
+  if (top.data.causes.length === 0) return { kind: "no_plant" };
   const causes = [];
   for (const item of top.data.causes.slice(0, MAX_CAUSES)) {
     const cause = causeSchema.safeParse(item);
-    if (!cause.success) return null;
+    if (!cause.success) return { kind: "invalid" };
     causes.push(cause.data);
   }
   const result: DiagnosisResult = { causes, summary: top.data.summary };
   const texts = [result.summary, ...causes.flatMap((c) => [c.title, c.explanation, c.advice])];
-  if (texts.some(statesNumericProbability)) return null;
-  return result;
+  if (texts.some(statesNumericProbability)) return { kind: "invalid" };
+  return { kind: "ok", result };
+}
+
+/** The result to show, or null when the answer is either "no plant" or broken. */
+export function validateDiagnosisOutput(raw: unknown): DiagnosisResult | null {
+  const reading = readDiagnosisOutput(raw);
+  return reading.kind === "ok" ? reading.result : null;
 }

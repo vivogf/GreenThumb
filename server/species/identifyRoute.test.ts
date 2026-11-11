@@ -165,11 +165,12 @@ test("lang is forwarded: ru → ru, en → en, missing → en", async () => {
   }
 });
 
-test("upstream 404 (no match) → 200 with empty results", async () => {
+test("upstream 404 (no match) → 200 with empty results, and the attempt is not counted", async () => {
   upstream = async () => new Response(JSON.stringify({ statusCode: 404, error: "Not Found", message: "Species not found" }), { status: 404 });
   const r = await post({ photos: [jpegUrl()] });
   assert.equal(r.status, 200);
-  assert.deepEqual(r.body.results, []);
+  assert.deepEqual(r.body, { results: [], remainingToday: 20 });
+  assert.equal(store.count("2026-10-27", "1", "identify"), 0);
 });
 
 test("per-user limit: third request is 429 without upstream; others and next day still served", async () => {

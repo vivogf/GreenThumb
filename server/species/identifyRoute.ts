@@ -44,9 +44,10 @@ export function createIdentifyHandler(deps: IdentifyDeps) {
       return;
     }
     const limits = plantNetLimits(env());
+    const day = utcDay(now());
     let reservation;
     try {
-      reservation = await deps.store.reserve({ day: utcDay(now()), userId: String(userId), kind: "identify", ...limits });
+      reservation = await deps.store.reserve({ day, userId: String(userId), kind: "identify", ...limits });
     } catch (err: any) {
       log(`species identify: usage store failed (${err?.name ?? "Error"})`);
       res.status(503).json(IDENTIFY_UNAVAILABLE);
@@ -62,9 +63,27 @@ export function createIdentifyHandler(deps: IdentifyDeps) {
       timeoutMs: deps.timeoutMs,
     });
     switch (outcome.kind) {
-      case "ok":
+      case "ok": {
+        if (outcome.results.length === 0) {
+          // Pl@ntNet found no plant: a verdict about the photo, not a recognition. The reservation goes back,
+          // so a photo of a wall does not spend one of the user's 20 identifications.
+          try {
+            await deps.store.release({ day, userId: String(userId), kind: "identify" });
+          } catch (err: any) {
+            log(`species identify: release failed (${err?.name ?? "Error"})`);
+          }
+          res.json({
+            results: [],
+            remainingToday: remainingAfter(
+              { userCount: reservation.userCount - 1, globalCount: reservation.globalCount - 1 },
+              limits,
+            ),
+          });
+          return;
+        }
         res.json({ results: outcome.results, remainingToday: remainingAfter(reservation, limits) });
         return;
+      }
       case "quota":
         log("species identify: upstream quota exhausted (429)");
         res.status(429).json(QUOTA_EXCEEDED);

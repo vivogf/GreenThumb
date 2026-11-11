@@ -8,7 +8,7 @@ import { jsonBodyParser, jsonErrorHandler } from "../http";
 import { DELETED_USAGE_USER, MemoryUsageStore, utcDay } from "../species/usage";
 import { createDiagnoseHandler, type DiagnoseStore } from "./route";
 import { createStandaloneDiagnoseHandler } from "./standaloneRoute";
-import { DiagnosisUnavailableError, type DiagnosisProvider, type DiagnosisRequest } from "./types";
+import { DiagnosisNotApplicableError, DiagnosisUnavailableError, type DiagnosisProvider, type DiagnosisRequest } from "./types";
 
 const U = 1;
 const V = 2;
@@ -206,7 +206,7 @@ test("POST /api/diagnose: order 401 → 400 → 503 → 429 → provider", async
 test("POST /api/diagnose: provider failure and invalid output give 503 and record nothing", async () => {
   behavior = async () => { throw new DiagnosisUnavailableError("upstream_unavailable"); };
   assert.equal((await standalone(valid)).status, 503);
-  behavior = async () => ({ causes: [], summary: "S" });
+  behavior = async () => ({ causes: [], summary: "  " });
   assert.equal((await standalone(valid)).status, 503);
   assert.equal(count(U), 0);
   failUsage = true;
@@ -214,6 +214,19 @@ test("POST /api/diagnose: provider failure and invalid output give 503 and recor
   const before = providerCalls.length;
   assert.equal((await standalone(valid)).status, 503);
   assert.equal(providerCalls.length, before);
+});
+
+test("POST /api/diagnose: a photo without a plant gives 422 no_plant and costs no daily check", async () => {
+  behavior = async () => ({ causes: [], summary: "We couldn't see a plant in this photo." });
+  const r = await standalone(valid);
+  assert.equal(r.status, 422);
+  assert.deepEqual(r.body, { error: "No plant or disease signs recognised", code: "no_plant" });
+  assert.equal(count(U), 0);
+  behavior = async () => { throw new DiagnosisNotApplicableError("refusal"); };
+  const refused = await standalone(valid);
+  assert.equal(refused.status, 422);
+  assert.equal(refused.body.code, "no_plant");
+  assert.equal(count(U), 0);
 });
 
 test("per-user limit 10 is shared: 6 plant + 4 standalone, the 11th on either route is 429 scope user", async () => {

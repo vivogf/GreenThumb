@@ -23,7 +23,15 @@ export type ReserveResult =
  */
 export interface UsageStore {
   reserve(input: UsageReservation): Promise<ReserveResult>;
+  /**
+   * Gives back one reservation whose call produced no recognition (no plant in the photo). That attempt was
+   * not a recognition, so it costs neither the user's daily count nor the global one. Never goes below zero.
+   */
+  release(input: UsageRef): Promise<void>;
 }
+
+/** The part of a reservation that names a counter row: enough to give one back. */
+export type UsageRef = Pick<UsageReservation, "day" | "userId" | "kind">;
 
 /**
  * Count-after-success counters (diagnosis: only successful results count, architecture §8.7). The limit check
@@ -85,6 +93,13 @@ export class MemoryUsageStore implements UsageStore, UsageCounter {
     if (userCount >= input.userLimit || globalCount >= input.globalLimit) return { ok: false };
     this.rows.set(this.key(input.day, input.userId, input.kind), userCount + 1);
     return { ok: true, userCount: userCount + 1, globalCount: globalCount + 1 };
+  }
+
+  async release(input: UsageRef): Promise<void> {
+    const key = this.key(input.day, input.userId, input.kind);
+    const count = this.count(input.day, input.userId, input.kind);
+    if (count <= 1) this.rows.delete(key);
+    else this.rows.set(key, count - 1);
   }
 
   async usageCount(day: string, userId: string, kind: ApiUsageKind): Promise<number> {

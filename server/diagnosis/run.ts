@@ -53,10 +53,11 @@ async function diagnoseWithDeadline(provider: DiagnosisProvider, request: Diagno
 }
 
 /**
- * Counts one paid provider call against the day's global cap. It runs before the provider is entered, so every
- * call counts — a «no plant» answer, a refusal, a malformed answer, and a call that dies at the deadline or when
- * the client hangs up, all of which are billed. Only a shown result also counts toward the user's own limit, so a
- * user is never charged for a call that showed nothing.
+ * Counts one provider request against the day's global cap. It runs before the provider is entered, so every
+ * request counts — a «no plant» answer, a refusal, a malformed answer, and one that dies at the deadline or when
+ * the client hangs up. Only a shown result also counts toward the user's own limit, so a user is never charged for
+ * a request that showed nothing. The OpenAI adapter may retry twice inside one request (openai.ts), so the cap
+ * bounds requests, not billable upstream calls: worst case three per request.
  *
  * A failed write is logged and the call proceeds: the same database serves the limit checks, so a store that
  * cannot write here has already failed the check that let the call through.
